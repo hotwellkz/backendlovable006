@@ -13,6 +13,10 @@ const port = process.env.PORT || 3000;
 
 // Настройка CORS для разрешения запросов с фронтенда
 app.use(cors(corsOptions));
+
+// Добавляем промежуточное ПО для обработки preflight запросов
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
