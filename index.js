@@ -14,14 +14,16 @@ const port = process.env.PORT || 3000;
 // Настройка CORS для разрешения запросов с фронтенда
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-url.vercel.app'] // Замените на URL вашего фронтенда
+    ? ['https://lovable.dev', 'https://www.lovable.dev'] 
     : ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true
 }));
 
-app.use(express.json());
+// ... keep existing code (middleware setup and OpenAI initialization)
 
-// ... keep existing code (OpenAI configuration and file handling)
+// ... keep existing code (file handling functions and routes)
+
+app.use('/uploads', express.static(uploadsDir));
 
 // Добавляем маршрут для проверки работоспособности
 app.get('/health', (req, res) => {
