@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import OpenAI from 'openai';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { corsOptions } from './config/cors.js';
+import apiRoutes from './routes/api.js';
 
 dotenv.config();
 
@@ -12,20 +12,19 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Настройка CORS для разрешения запросов с фронтенда
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://lovable.dev', 'https://www.lovable.dev'] 
-    : ['http://localhost:5173', 'http://localhost:3000'],
-  credentials: true
-}));
+app.use(cors(corsOptions));
+app.use(express.json());
 
-// ... keep existing code (middleware setup and OpenAI initialization)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadsDir = path.join(__dirname, 'uploads');
 
-// ... keep existing code (file handling functions and routes)
+// Подключаем маршруты API
+app.use('/api', apiRoutes);
 
+// Статические файлы
 app.use('/uploads', express.static(uploadsDir));
 
-// Добавляем маршрут для проверки работоспособности
+// Маршрут для проверки работоспособности
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
