@@ -3,6 +3,7 @@ import { handlePrompt, handleUpdateFiles, handleFiles } from '../controllers/api
 
 const router = express.Router();
 
+router.post('/process-prompt', handlePrompt); // Добавляем новый маршрут
 router.post('/prompt', handlePrompt);
 router.post('/update-files', handleUpdateFiles);
 router.post('/files', handleFiles);
