@@ -19,25 +19,79 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export const handlePrompt = async (req, res) => {
+// Функция для развертывания проекта
+const deployProject = async (userId, files, framework) => {
   try {
-    const { prompt, userId } = req.body;
-    if (!prompt || !userId) {
-      throw new Error('Prompt and userId are required');
+    // Создаем временную директорию для проекта
+    const projectDir = path.join(uploadsDir, userId);
+    if (!fs.existsSync(projectDir)) {
+      fs.mkdirSync(projectDir, { recursive: true });
     }
 
-    // Сохраняем промт пользователя в историю чата
-    const { error: chatError } = await supabase
-      .from('chat_history')
-      .insert({
+    // Записываем файлы
+    for (const file of files) {
+      const filePath = path.join(projectDir, file.path);
+      const fileDir = path.dirname(filePath);
+
+      if (!fs.existsSync(fileDir)) {
+        fs.mkdirSync(fileDir, { recursive: true });
+      }
+
+      fs.writeFileSync(filePath, file.content);
+    }
+
+    // Обновляем статус развертывания в базе данных
+    const { data, error } = await supabase
+      .from('deployed_projects')
+      .upsert({
         user_id: userId,
-        prompt: prompt,
-        is_ai: false
+        status: 'deployed',
+        framework,
+        project_url: `/preview/${userId}`,
+        last_deployment: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return data;
+  } catch (error) {
+    console.error('Deployment error:', error);
+    throw error;
+  }
+};
+
+// Функция для чтения содержимого директории
+const readDirectory = (directory) => {
+  const files = [];
+  const items = fs.readdirSync(directory);
+
+  for (const item of items) {
+    const itemPath = path.join(directory, item);
+    const stat = fs.statSync(itemPath);
+
+    if (stat.isDirectory()) {
+      files.push(...readDirectory(itemPath));
+    } else {
+      files.push({
+        path: path.relative(uploadsDir, itemPath),
+        content: fs.readFileSync(itemPath, 'utf8'),
       });
+    }
+  }
 
-    if (chatError) throw chatError;
+  return files;
+};
 
-    // Отправляем запрос к OpenAI
+export const handlePrompt = async (req, res) => {
+  try {
+    const { prompt, framework, userId } = req.body;
+
+    if (!prompt || !userId) {
+      return res.status(400).json({ error: 'Prompt and userId are required' });
+    }
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
@@ -51,64 +105,33 @@ export const handlePrompt = async (req, res) => {
 
     const response = JSON.parse(completion.choices[0].message.content);
 
-    // Сохраняем файлы в Supabase Storage
     if (response.files && response.files.length > 0) {
-      for (const file of response.files) {
-        const filePath = `${userId}/${file.path}`;
-        const contentBuffer = Buffer.from(file.content);
+      // Сохраняем файлы и разворачиваем проект
+      const deploymentResult = await deployProject(userId, response.files, framework);
 
-        // Загружаем файл в storage
-        const { error: uploadError } = await supabase.storage
-          .from('project_files')
-          .upload(filePath, contentBuffer, {
-            contentType: 'text/plain',
-            upsert: true
-          });
+      // Сохраняем историю чата
+      await supabase
+        .from('chat_history')
+        .insert({
+          user_id: userId,
+          prompt,
+          response: JSON.stringify(response),
+          is_ai: true
+        });
 
-        if (uploadError) throw uploadError;
-
-        // Сохраняем метаданные файла в базу данных
-        const { error: dbError } = await supabase
-          .from('files')
-          .insert({
-            user_id: userId,
-            filename: path.basename(file.path),
-            file_path: filePath,
-            content_type: 'text/plain',
-            size: contentBuffer.length
-          });
-
-        if (dbError) throw dbError;
-      }
-    }
-
-    // Сохраняем ответ ИИ в историю чата
-    const { error: aiChatError } = await supabase
-      .from('chat_history')
-      .insert({
-        user_id: userId,
-        prompt: response.description,
-        is_ai: true
+      res.json({
+        ...response,
+        deployment: deploymentResult
       });
-
-    if (aiChatError) throw aiChatError;
-
-    res.json({
-      success: true,
-      message: 'Files created and saved successfully',
-      description: response.description
-    });
+    } else {
+      res.json(response);
+    }
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to process prompt',
-      details: error.message 
-    });
+    res.status(500).json({ error: 'Failed to process prompt' });
   }
 };
 
-// Сохраняем существующий код (handleUpdateFiles и handleFiles)
 export const handleUpdateFiles = async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -150,7 +173,7 @@ Please analyze these files and provide necessary updates. Return response in the
 
     for (const file of response.files) {
       const filePath = path.join(uploadsDir, file.path);
-      
+
       if (file.action === 'delete') {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
@@ -171,10 +194,10 @@ Please analyze these files and provide necessary updates. Return response in the
     });
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Failed to update files',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -187,13 +210,13 @@ export const handleFiles = async (req, res) => {
     for (const file of files) {
       const filePath = path.join(uploadsDir, file.path);
       const fileDir = path.dirname(filePath);
-      
+
       if (!fs.existsSync(fileDir)) {
         fs.mkdirSync(fileDir, { recursive: true });
       }
-      
+
       fs.writeFileSync(filePath, file.content);
-      
+
       results.push({
         path: file.path,
         url: `/uploads/${file.path}`
@@ -205,26 +228,4 @@ export const handleFiles = async (req, res) => {
     console.error('Error:', error);
     res.status(500).json({ error: 'Failed to save files' });
   }
-};
-
-// Функция для чтения содержимого директории
-const readDirectory = (directory) => {
-  const files = [];
-  const items = fs.readdirSync(directory);
-
-  for (const item of items) {
-    const itemPath = path.join(directory, item);
-    const stat = fs.statSync(itemPath);
-
-    if (stat.isDirectory()) {
-      files.push(...readDirectory(itemPath));
-    } else {
-      files.push({
-        path: path.relative(uploadsDir, itemPath),
-        content: fs.readFileSync(itemPath, 'utf8'),
-      });
-    }
-  }
-
-  return files;
 };
