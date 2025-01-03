@@ -9,8 +9,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 
 // Настройка OpenAI
+if (!process.env.OPENAI_API_KEY) {
+  console.error('OPENAI_API_KEY не установлен в переменных окружения');
+}
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Настройка Supabase
@@ -18,10 +21,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-if (!process.env.OPENAI_API_KEY) {
-  console.error('OPENAI_API_KEY не установлен в переменных окружения');
-}
 
 // Функция для развертывания проекта
 const deployProject = async (userId, files, framework) => {
@@ -49,7 +48,7 @@ const deployProject = async (userId, files, framework) => {
         status: 'deployed',
         framework,
         project_url: `/preview/${userId}`,
-        last_deployment: new Date().toISOString()
+        last_deployment: new Date().toISOString(),
       })
       .select()
       .single();
@@ -93,12 +92,13 @@ export const handlePrompt = async (req, res) => {
       return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
     }
 
+    // Сохраняем промпт в историю чата
     const { error: chatError } = await supabase
       .from('chat_history')
       .insert({
         user_id: userId,
-        prompt: prompt,
-        is_ai: false
+        prompt,
+        is_ai: false,
       });
 
     if (chatError) {
@@ -106,25 +106,27 @@ export const handlePrompt = async (req, res) => {
       throw chatError;
     }
 
+    // Формируем системный промт в зависимости от фреймворка
     let systemPrompt = "You are a helpful assistant that generates structured responses for code generation. ";
     switch (framework) {
-      case "react":
+      case 'react':
         systemPrompt += "You specialize in creating React applications with TypeScript, React Router, and Tailwind CSS. ";
         break;
-      case "node":
+      case 'node':
         systemPrompt += "You specialize in creating Node.js applications with Express.js, MongoDB/Mongoose, and JWT authentication. ";
         break;
-      case "vue":
+      case 'vue':
         systemPrompt += "You specialize in creating Vue.js applications with TypeScript, Vue Router, and Vuex. ";
         break;
     }
     systemPrompt += "Always return response in JSON format with fields: files (array of file objects with path and content), description (string with explanation).";
 
+    // Получаем ответ от OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: 'gpt-4',
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt },
       ],
     });
 
@@ -142,7 +144,7 @@ export const handlePrompt = async (req, res) => {
           .from('project_files')
           .upload(filePath, file.content, {
             contentType: 'text/plain',
-            upsert: true
+            upsert: true,
           });
 
         if (uploadError) {
@@ -158,7 +160,7 @@ export const handlePrompt = async (req, res) => {
             file_path: filePath,
             content_type: 'text/plain',
             size: Buffer.byteLength(file.content, 'utf8'),
-            content: file.content
+            content: file.content,
           });
 
         if (fileError) {
@@ -168,12 +170,13 @@ export const handlePrompt = async (req, res) => {
       }
     }
 
+    // Сохраняем ответ ИИ в историю чата
     const { error: aiChatError } = await supabase
       .from('chat_history')
       .insert({
         user_id: userId,
         prompt: response.description,
-        is_ai: true
+        is_ai: true,
       });
 
     if (aiChatError) {
@@ -184,9 +187,9 @@ export const handlePrompt = async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Ошибка при обработке запроса',
-      details: error.message 
+      details: error.message,
     });
   }
 };
@@ -197,14 +200,14 @@ export const handleUpdateFiles = async (req, res) => {
     const currentFiles = readDirectory(uploadsDir);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: 'gpt-4',
       messages: [
         {
-          role: "system",
-          content: "You are a helpful assistant that analyzes and modifies code files. Return response in JSON format with fields: files (array of file objects with action, path and content), description (string with explanation)."
+          role: 'system',
+          content: "You are a helpful assistant that analyzes and modifies code files. Return response in JSON format with fields: files (array of file objects with action, path and content), description (string with explanation).",
         },
         {
-          role: "user",
+          role: 'user',
           content: `
 Current project files:
 ${currentFiles.map(file => `File: ${file.path}\nContent:\n${file.content}`).join('\n\n')}
@@ -222,8 +225,8 @@ Please analyze these files and provide necessary updates. Return response in the
     }
   ],
   "description": "Description of changes made"
-}`
-        }
+}`,
+        },
       ],
     });
 
@@ -248,14 +251,14 @@ Please analyze these files and provide necessary updates. Return response in the
     res.json({
       success: true,
       message: 'Files updated successfully',
-      description: response.description
+      description: response.description,
     });
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to update files',
-      details: error.message
+      details: error.message,
     });
   }
 };
@@ -277,7 +280,7 @@ export const handleFiles = async (req, res) => {
 
       results.push({
         path: file.path,
-        url: `/uploads/${file.path}`
+        url: `/uploads/${file.path}`,
       });
     }
 
