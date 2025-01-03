@@ -22,13 +22,11 @@ const supabase = createClient(
 // Функция для развертывания проекта
 const deployProject = async (userId, files, framework) => {
   try {
-    // Создаем временную директорию для проекта
     const projectDir = path.join(uploadsDir, userId);
     if (!fs.existsSync(projectDir)) {
       fs.mkdirSync(projectDir, { recursive: true });
     }
 
-    // Записываем файлы
     for (const file of files) {
       const filePath = path.join(projectDir, file.path);
       const fileDir = path.dirname(filePath);
@@ -40,7 +38,6 @@ const deployProject = async (userId, files, framework) => {
       fs.writeFileSync(filePath, file.content);
     }
 
-    // Обновляем статус развертывания в базе данных
     const { data, error } = await supabase
       .from('deployed_projects')
       .upsert({
@@ -106,10 +103,34 @@ export const handlePrompt = async (req, res) => {
     const response = JSON.parse(completion.choices[0].message.content);
 
     if (response.files && response.files.length > 0) {
-      // Сохраняем файлы и разворачиваем проект
       const deploymentResult = await deployProject(userId, response.files, framework);
 
-      // Сохраняем историю чата
+      for (const file of response.files) {
+        const buffer = Buffer.from(file.content);
+
+        const { error: uploadError } = await supabase.storage
+          .from('project_files')
+          .upload(`${userId}/${file.path}`, buffer, {
+            contentType: 'text/plain',
+            upsert: true
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { error: dbError } = await supabase
+          .from('files')
+          .insert({
+            user_id: userId,
+            filename: path.basename(file.path),
+            file_path: `${userId}/${file.path}`,
+            content_type: 'text/plain',
+            size: buffer.length,
+            content: file.content
+          });
+
+        if (dbError) throw dbError;
+      }
+
       await supabase
         .from('chat_history')
         .insert({
@@ -163,8 +184,7 @@ Please analyze these files and provide necessary updates. Return response in the
     }
   ],
   "description": "Description of changes made"
-}
-`
+}`
         }
       ],
     });
