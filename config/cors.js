@@ -1,4 +1,4 @@
-const corsOptions = {
+export const corsOptions = {
   origin: process.env.NODE_ENV === 'production'
     ? [
         'https://lovable.dev',
