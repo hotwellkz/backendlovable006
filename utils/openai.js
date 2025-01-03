@@ -1,13 +1,8 @@
 import OpenAI from 'openai';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+import { supabase } from '../config/supabase.js';
 
 // Функция для получения API ключа из Supabase
-export const getOpenAIKey = async () => {
+const getOpenAIKey = async () => {
   const { data, error } = await supabase
     .from('secrets')
     .select('value')
