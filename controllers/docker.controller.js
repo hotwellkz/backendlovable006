@@ -17,7 +17,7 @@ export const createContainer = async (req, res) => {
         user_id: userId,
         project_id: projectId,
         framework,
-        status: 'creating',
+        status: 'initializing', // Новый начальный статус
       })
       .select()
       .single();
@@ -28,22 +28,47 @@ export const createContainer = async (req, res) => {
     }
 
     // В реальном приложении здесь будет логика создания Docker контейнера
-    // Пока просто имитируем успешное создание
+    // Имитируем процесс создания и запуска
     setTimeout(async () => {
-      const { error: updateError } = await supabase
+      // Обновляем статус на 'creating'
+      await supabase
         .from('docker_containers')
         .update({ 
-          status: 'running',
-          container_id: `container_${container.id.slice(0, 8)}`,
-          container_url: `https://container-${container.id.slice(0, 8)}.lovable.dev`,
-          port: 3000
+          status: 'creating',
+          container_logs: 'Creating container environment...'
         })
         .eq('id', container.id);
 
-      if (updateError) {
-        console.error('Ошибка при обновлении статуса контейнера:', updateError);
-      }
-    }, 5000);
+      // Имитируем процесс настройки
+      setTimeout(async () => {
+        // Обновляем статус на 'starting'
+        await supabase
+          .from('docker_containers')
+          .update({ 
+            status: 'starting',
+            container_id: `container_${container.id.slice(0, 8)}`,
+            container_logs: 'Starting container services...'
+          })
+          .eq('id', container.id);
+
+        // Финальное обновление - контейнер запущен
+        setTimeout(async () => {
+          const { error: updateError } = await supabase
+            .from('docker_containers')
+            .update({ 
+              status: 'running',
+              container_url: `https://container-${container.id.slice(0, 8)}.lovable.dev`,
+              port: 3000,
+              container_logs: 'Container is running successfully'
+            })
+            .eq('id', container.id);
+
+          if (updateError) {
+            console.error('Ошибка при обновлении статуса контейнера:', updateError);
+          }
+        }, 2000);
+      }, 2000);
+    }, 2000);
 
     res.json({ 
       success: true, 
@@ -95,19 +120,50 @@ export const deleteContainer = async (req, res) => {
     const { containerId } = req.params;
     console.log('Удаление контейнера:', containerId);
 
-    const { error } = await supabase
+    // Сначала получаем информацию о контейнере
+    const { data: container, error: fetchError } = await supabase
       .from('docker_containers')
-      .delete()
+      .select('*')
+      .eq('id', containerId)
+      .single();
+
+    if (fetchError) {
+      console.error('Ошибка при получении информации о контейнере:', fetchError);
+      throw fetchError;
+    }
+
+    // Проверяем, что контейнер существует
+    if (!container) {
+      return res.status(404).json({ 
+        error: 'Контейнер не найден' 
+      });
+    }
+
+    // Обновляем статус на 'stopping'
+    await supabase
+      .from('docker_containers')
+      .update({ 
+        status: 'stopping',
+        container_logs: 'Stopping container services...'
+      })
       .eq('id', containerId);
 
-    if (error) {
-      console.error('Ошибка при удалении контейнера:', error);
-      throw error;
-    }
+    // Имитируем процесс остановки
+    setTimeout(async () => {
+      const { error } = await supabase
+        .from('docker_containers')
+        .delete()
+        .eq('id', containerId);
+
+      if (error) {
+        console.error('Ошибка при удалении контейнера:', error);
+        throw error;
+      }
+    }, 2000);
 
     res.json({ 
       success: true, 
-      message: 'Контейнер успешно удален' 
+      message: 'Контейнер останавливается и будет удален' 
     });
   } catch (error) {
     console.error('Error:', error);
