@@ -28,7 +28,7 @@ export const getContainerStatus = async (req, res) => {
       throw new Error('Container not found');
     }
 
-    // Получаем метрики контейнера
+    // Получаем метрики контейнера с расширенной информацией
     const { data: metrics, error: metricsError } = await supabase
       .from('container_metrics')
       .select('*')
@@ -41,13 +41,23 @@ export const getContainerStatus = async (req, res) => {
       console.error('Error fetching metrics:', metricsError);
     }
 
-    res.json({
+    // Добавляем расширенную информацию о статусе
+    const statusInfo = {
       status: container.status,
       url: container.container_url,
       logs: container.container_logs,
       metrics: metrics || null,
-      lastUpdate: container.updated_at
-    });
+      lastUpdate: container.updated_at,
+      health: {
+        isHealthy: container.status === 'running',
+        lastCheck: new Date().toISOString(),
+        errorCount: metrics?.error_count || 0
+      }
+    };
+
+    console.log(`Container ${containerId} status:`, statusInfo);
+    res.json(statusInfo);
+
   } catch (error) {
     console.error('Error in getContainerStatus:', error);
     
@@ -57,7 +67,8 @@ export const getContainerStatus = async (req, res) => {
     res.status(500).json({
       error: handledError.message,
       details: handledError.details,
-      type: handledError.type
+      type: handledError.type,
+      severity: handledError.severity
     });
   }
 };
