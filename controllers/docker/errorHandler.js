@@ -1,12 +1,13 @@
 const handleContainerError = (error, containerId) => {
   console.error(`Container error (${containerId}):`, error);
   
-  // Классификация ошибок
+  // Расширенная классификация ошибок
   if (error.code === 'ECONNREFUSED') {
     return {
       type: 'connection',
       message: 'Не удалось подключиться к Docker daemon',
-      details: error.message
+      details: error.message,
+      severity: 'critical'
     };
   }
   
@@ -14,7 +15,8 @@ const handleContainerError = (error, containerId) => {
     return {
       type: 'not_found',
       message: 'Контейнер не найден',
-      details: error.message
+      details: error.message,
+      severity: 'warning'
     };
   }
   
@@ -22,28 +24,57 @@ const handleContainerError = (error, containerId) => {
     return {
       type: 'conflict',
       message: 'Конфликт при работе с контейнером',
-      details: error.message
+      details: error.message,
+      severity: 'error'
+    };
+  }
+
+  if (error.code === 'ENOSPC') {
+    return {
+      type: 'resources',
+      message: 'Недостаточно ресурсов для создания контейнера',
+      details: 'Нет свободного места на диске или достигнут лимит контейнеров',
+      severity: 'critical'
+    };
+  }
+
+  if (error.code === 'ETIMEDOUT') {
+    return {
+      type: 'timeout',
+      message: 'Превышено время ожидания операции',
+      details: 'Операция с контейнером заняла слишком много времени',
+      severity: 'error'
     };
   }
   
   return {
     type: 'unknown',
     message: 'Произошла неизвестная ошибка',
-    details: error.message
+    details: error.message,
+    severity: 'error'
   };
 };
 
 const logContainerError = async (supabase, error, containerId, userId) => {
   try {
-    // Обновляем статус контейнера
+    console.log(`Logging error for container ${containerId}:`, {
+      type: error.type,
+      severity: error.severity,
+      message: error.message,
+      details: error.details
+    });
+
+    // Обновляем статус контейнера с более детальной информацией
     const { error: updateError } = await supabase
       .from('docker_containers')
       .update({
         status: 'error',
         container_logs: JSON.stringify({
           error: error.message,
-          timestamp: new Date().toISOString(),
-          type: error.type
+          type: error.type,
+          severity: error.severity,
+          details: error.details,
+          timestamp: new Date().toISOString()
         })
       })
       .eq('container_id', containerId)
@@ -53,16 +84,31 @@ const logContainerError = async (supabase, error, containerId, userId) => {
       console.error('Error updating container status:', updateError);
     }
 
-    // Добавляем метрику об ошибке
+    // Добавляем метрику об ошибке с дополнительной информацией
     const { error: metricsError } = await supabase
       .from('container_metrics')
       .insert({
         container_id: containerId,
-        error_count: 1
+        error_count: 1,
+        error_type: error.type,
+        error_severity: error.severity
       });
 
     if (metricsError) {
       console.error('Error updating metrics:', metricsError);
+    }
+
+    // Логируем критические ошибки отдельно для мониторинга
+    if (error.severity === 'critical') {
+      console.error('CRITICAL ERROR:', {
+        containerId,
+        userId,
+        error: {
+          type: error.type,
+          message: error.message,
+          details: error.details
+        }
+      });
     }
   } catch (err) {
     console.error('Error in logContainerError:', err);
