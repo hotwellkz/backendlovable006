@@ -11,6 +11,11 @@ export const processFileGeneration = async (job) => {
     try {
       console.log(`Processing file: ${file.path}`);
       
+      // Валидация файла
+      if (!file.path || !file.content) {
+        throw new Error(`Invalid file data for file: ${file.path}`);
+      }
+
       // Сохраняем файл в Storage
       const uploadData = await saveToStorage(userId, file);
       console.log('File saved to storage:', uploadData);
@@ -21,7 +26,7 @@ export const processFileGeneration = async (job) => {
       
       results.push({
         path: file.path,
-        url: `/uploads/${file.path}`,
+        url: fileData.public_url,
         version: fileData.version
       });
     } catch (error) {
