@@ -33,29 +33,26 @@ export const saveChatHistory = async (userId, prompt, isAi = false) => {
 export const handlePromptProcessing = async (prompt, framework, userId) => {
   console.log('Начало обработки промпта:', { framework, userId });
   
-  validateRequest(prompt, framework, userId);
-  
-  // Сохраняем промпт пользователя
-  await saveChatHistory(userId, prompt);
-
-  // Генерируем ответ через OpenAI
-  const aiResponse = await generateResponse(prompt, framework);
-  
-  // Парсим JSON ответ
-  let response;
   try {
-    response = JSON.parse(aiResponse);
-    console.log('Успешно распарсен ответ AI:', {
+    validateRequest(prompt, framework, userId);
+    
+    // Сохраняем промпт пользователя
+    await saveChatHistory(userId, prompt);
+
+    // Генерируем ответ через OpenAI
+    const response = await generateResponse(prompt, framework);
+    
+    console.log('Успешно получен ответ от OpenAI:', {
       filesCount: response.files?.length,
       description: response.description?.substring(0, 100) + '...'
     });
+
+    // Сохраняем ответ ИИ
+    await saveChatHistory(userId, response.description, true);
+
+    return response;
   } catch (error) {
-    console.error('Error parsing OpenAI response:', error);
-    throw new Error('Invalid response format from AI');
+    console.error('Ошибка при обработке промпта:', error);
+    throw error;
   }
-
-  // Сохраняем ответ ИИ
-  await saveChatHistory(userId, response.description, true);
-
-  return response;
 };
