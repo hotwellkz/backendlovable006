@@ -17,7 +17,10 @@ export const processFileGeneration = async (job) => {
   
   for (const file of files) {
     try {
-      console.log(`Обработка файла: ${file.path}`);
+      console.log(`Обработка файла: ${file.path}`, {
+        contentLength: file.content?.length,
+        hasPath: Boolean(file.path)
+      });
       
       // Валидация файла
       if (!file.path || !file.content) {
@@ -45,7 +48,8 @@ export const processFileGeneration = async (job) => {
   }
 
   console.log('Все файлы успешно обработаны:', {
-    processedCount: results.length
+    processedCount: results.length,
+    results
   });
 
   return results;
