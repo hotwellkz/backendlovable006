@@ -2,7 +2,7 @@ import { supabase } from '../config/supabase.js';
 import path from 'path';
 
 export const saveFileMetadata = async (userId, file, uploadData) => {
-  console.log('Сохранение метаданных файла:', {
+  console.log('Начало сохранения метаданных файла:', {
     userId,
     filePath: file.path
   });
@@ -17,6 +17,8 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
       .eq('file_path', filePath)
       .maybeSingle();
 
+    console.log('Существующий файл:', existingFile);
+
     const version = existingFile ? (existingFile.version || 1) + 1 : 1;
     const previousVersions = existingFile?.previous_versions || [];
 
@@ -29,6 +31,11 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
         modified_by: existingFile.modified_by || userId
       });
     }
+
+    console.log('Подготовка к сохранению метаданных:', {
+      version,
+      previousVersionsCount: previousVersions.length
+    });
 
     // Сохраняем или обновляем метаданные файла
     const { data: fileData, error: dbError } = await supabase
@@ -54,16 +61,15 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
       throw dbError;
     }
 
-    console.log('Метаданные файла сохранены:', {
+    console.log('Метаданные успешно сохранены:', {
       id: fileData.id,
       path: fileData.file_path,
-      version,
-      url: fileData.public_url
+      version: fileData.version
     });
 
     return fileData;
   } catch (error) {
-    console.error('Ошибка при сохранении метаданных:', error);
+    console.error('Критическая ошибка при сохранении метаданных:', error);
     throw error;
   }
 };
