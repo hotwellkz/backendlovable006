@@ -1,15 +1,26 @@
 import { initOpenAI } from '../utils/openai.js';
 import { supabase } from '../config/supabase.js';
+import os from 'os';
 
 export const handlePrompt = async (req, res) => {
   try {
+    // Логируем использование системных ресурсов
+    console.log('Свободная память:', os.freemem() / 1024 / 1024, 'MB');
+    console.log('Загрузка CPU:', os.loadavg());
+    console.log('Всего памяти:', os.totalmem() / 1024 / 1024, 'MB');
+
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       console.error('Отсутствует заголовок авторизации');
       return res.status(401).json({ error: 'Необходима авторизация' });
     }
 
-    console.log('Получен запрос:', req.body);
+    console.log('Получен запрос:', {
+      headers: req.headers,
+      body: req.body,
+      method: req.method
+    });
+
     const { prompt, framework, userId } = req.body;
 
     if (!prompt || !framework || !userId) {
@@ -28,7 +39,10 @@ export const handlePrompt = async (req, res) => {
     }
 
     if (user.id !== userId) {
-      console.error('Несоответствие userId');
+      console.error('Несоответствие userId:', { 
+        requestUserId: userId, 
+        tokenUserId: user.id 
+      });
       return res.status(403).json({ error: 'Доступ запрещен' });
     }
 
@@ -39,13 +53,14 @@ export const handlePrompt = async (req, res) => {
       return res.status(500).json({ error: 'Ошибка инициализации OpenAI' });
     }
 
-    // Сохраняем промпт пользователя
+    // Сохраняем промпт пользователя с дополнительной информацией
     const { error: chatError } = await supabase
       .from('chat_history')
       .insert({
         user_id: userId,
         prompt,
         is_ai: false,
+        timestamp: new Date().toISOString(),
       });
 
     if (chatError) {
@@ -80,20 +95,32 @@ export const handlePrompt = async (req, res) => {
         break;
     }
 
-    console.log('Отправляем запрос к OpenAI...');
+    console.log('Отправляем запрос к OpenAI с параметрами:', {
+      model: "gpt-4",
+      systemPrompt,
+      userPrompt: prompt,
+      timestamp: new Date().toISOString()
+    });
     
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25 секунд таймаут
+
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4", // Используем существующую модель
+        model: "gpt-4",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 4000
+        max_tokens: 4000,
+        signal: controller.signal
       });
 
+      clearTimeout(timeout);
+
       if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
+        console.error('Некорректный ответ от OpenAI API:', completion);
         throw new Error('Некорректный ответ от OpenAI API');
       }
 
@@ -108,13 +135,14 @@ export const handlePrompt = async (req, res) => {
         throw new Error('Некорректный формат ответа от OpenAI');
       }
 
-      // Сохраняем ответ ИИ
+      // Сохраняем ответ ИИ с дополнительной информацией
       const { error: aiChatError } = await supabase
         .from('chat_history')
         .insert({
           user_id: userId,
           prompt: response.description,
           is_ai: true,
+          timestamp: new Date().toISOString(),
         });
 
       if (aiChatError) {
@@ -122,18 +150,39 @@ export const handlePrompt = async (req, res) => {
         throw new Error('Ошибка при сохранении ответа в базу данных');
       }
 
+      // Логируем успешное выполнение
+      console.log('Запрос успешно обработан:', {
+        userId,
+        framework,
+        promptLength: prompt.length,
+        responseLength: JSON.stringify(response).length,
+        timestamp: new Date().toISOString()
+      });
+
       res.json({
         ...response,
         success: true
       });
       
     } catch (openAiError) {
+      clearTimeout(timeout);
+      if (openAiError.name === 'AbortError') {
+        console.error('Превышено время ожидания ответа от OpenAI');
+        return res.status(504).json({ 
+          error: 'Превышено время ожидания ответа',
+          details: 'Запрос к OpenAI занял слишком много времени'
+        });
+      }
       console.error('Ошибка при запросе к OpenAI:', openAiError);
       throw new Error(`Ошибка при запросе к OpenAI: ${openAiError.message}`);
     }
     
   } catch (error) {
-    console.error('Ошибка:', error);
+    console.error('Критическая ошибка:', {
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
     res.status(500).json({
       error: 'Ошибка при обработке запроса',
       details: error.message
