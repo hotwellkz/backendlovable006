@@ -10,14 +10,68 @@ import {
 
 const router = express.Router();
 
-router.post('/prompt', handlePrompt);
-router.post('/files', handleFiles);
-router.post('/files/update', handleUpdateFiles);
-router.post('/deploy', handleDeployment);
+// Логирование запросов
+router.use((req, res, next) => {
+  console.log(`API Request: ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Маршруты API
+router.post('/prompt', async (req, res, next) => {
+  try {
+    await handlePrompt(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/files', async (req, res, next) => {
+  try {
+    await handleFiles(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/files/update', async (req, res, next) => {
+  try {
+    await handleUpdateFiles(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/deploy', async (req, res, next) => {
+  try {
+    await handleDeployment(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Docker контейнеры
-router.post('/containers', createContainer);
-router.get('/containers/:containerId/status', getContainerStatus);
-router.delete('/containers/:containerId', deleteContainer);
+router.post('/containers', async (req, res, next) => {
+  try {
+    await createContainer(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/containers/:containerId/status', async (req, res, next) => {
+  try {
+    await getContainerStatus(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/containers/:containerId', async (req, res, next) => {
+  try {
+    await deleteContainer(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;
