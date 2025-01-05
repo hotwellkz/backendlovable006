@@ -1,9 +1,12 @@
 import { initOpenAI } from '../openai.js';
 import { getSystemPrompt } from './systemPrompts.js';
+import { MessageParser } from '../parser/messageParser.js';
 
 export const generateResponse = async (prompt, framework) => {
-  console.time('openai_request');
-  
+  if (!prompt || !framework) {
+    throw new Error('Отсутствуют необходимые параметры');
+  }
+
   const openai = await initOpenAI();
   if (!openai) {
     throw new Error('Failed to initialize OpenAI client');
@@ -22,19 +25,13 @@ export const generateResponse = async (prompt, framework) => {
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 4000,
-      response_format: { type: "json_object" }
+      max_tokens: 4000
     });
 
     console.log('Получен ответ от OpenAI:', completion.choices[0].message);
 
-    if (!completion.choices?.[0]?.message?.content) {
-      throw new Error('Invalid response from OpenAI API');
-    }
-
-    console.log('Парсинг JSON ответа...');
-    const parsedResponse = JSON.parse(completion.choices[0].message.content);
-    console.log('JSON успешно распарсен');
+    const messageParser = new MessageParser();
+    const parsedResponse = await messageParser.parseOpenAIResponse(completion);
     
     return parsedResponse;
   } catch (error) {
