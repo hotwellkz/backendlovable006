@@ -2,18 +2,33 @@ import { supabase } from '../config/supabase.js';
 import path from 'path';
 
 export const saveFileToStorage = async (userId, file) => {
-  console.log('Сохранение файла в Storage:', {
+  console.log('Начало сохранения файла в Storage:', {
     userId,
     filePath: file.path,
     contentLength: file.content?.length
   });
 
+  if (!file.content) {
+    console.error('Ошибка: содержимое файла отсутствует');
+    throw new Error('File content is required');
+  }
+
   const filePath = `${userId}/${file.path}`;
   
   try {
+    // Конвертируем содержимое в Uint8Array для загрузки
+    const contentBuffer = new TextEncoder().encode(file.content);
+    
+    console.log('Подготовка к загрузке файла:', { 
+      filePath,
+      contentType: typeof file.content,
+      bufferLength: contentBuffer.length
+    });
+
+    // Загружаем файл в storage
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('project_files')
-      .upload(filePath, file.content, {
+      .upload(filePath, contentBuffer, {
         contentType: 'text/plain',
         upsert: true
       });
@@ -28,7 +43,15 @@ export const saveFileToStorage = async (userId, file) => {
       uploadData
     });
 
-    return uploadData;
+    // Получаем публичную ссылку
+    const { data: urlData } = await supabase.storage
+      .from('project_files')
+      .getPublicUrl(filePath);
+
+    return {
+      ...uploadData,
+      publicUrl: urlData.publicUrl
+    };
   } catch (error) {
     console.error('Ошибка при сохранении файла:', error);
     throw error;
@@ -72,7 +95,8 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
         version: version,
         previous_versions: previousVersions,
         last_modified: new Date().toISOString(),
-        modified_by: userId
+        modified_by: userId,
+        public_url: uploadData.publicUrl
       })
       .select()
       .single();
@@ -84,7 +108,8 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
 
     console.log('Метаданные файла сохранены:', {
       id: fileData.id,
-      path: fileData.file_path
+      path: fileData.file_path,
+      version: fileData.version
     });
 
     return fileData;
