@@ -8,10 +8,10 @@ const getOpenAIKey = async (retryCount = 3) => {
       console.log(`Попытка ${i + 1} получения API ключа OpenAI из Supabase...`);
       
       // Проверяем подключение к Supabase
-      const { data: testData, error: testError } = await supabase
+      const { error: testError } = await supabase
         .from('secrets')
-        .select('count(*)')
-        .single();
+        .select('*')
+        .limit(1);
       
       if (testError) {
         console.error('Ошибка подключения к Supabase:', testError);
