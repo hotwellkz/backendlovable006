@@ -101,9 +101,6 @@ export const handlePrompt = async (req, res) => {
       userPrompt: prompt,
       timestamp: new Date().toISOString()
     });
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000); // 25 секунд таймаут
 
     try {
       const completion = await openai.chat.completions.create({
@@ -113,11 +110,8 @@ export const handlePrompt = async (req, res) => {
           { role: "user", content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 4000,
-        signal: controller.signal
+        max_tokens: 4000
       });
-
-      clearTimeout(timeout);
 
       if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
         console.error('Некорректный ответ от OpenAI API:', completion);
@@ -165,14 +159,6 @@ export const handlePrompt = async (req, res) => {
       });
       
     } catch (openAiError) {
-      clearTimeout(timeout);
-      if (openAiError.name === 'AbortError') {
-        console.error('Превышено время ожидания ответа от OpenAI');
-        return res.status(504).json({ 
-          error: 'Превышено время ожидания ответа',
-          details: 'Запрос к OpenAI занял слишком много времени'
-        });
-      }
       console.error('Ошибка при запросе к OpenAI:', openAiError);
       throw new Error(`Ошибка при запросе к OpenAI: ${openAiError.message}`);
     }
