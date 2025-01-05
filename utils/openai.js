@@ -15,6 +15,8 @@ const getOpenAIKey = async (retryCount = 3) => {
       
       if (testError) {
         console.error('Ошибка подключения к Supabase:', testError);
+        if (i === retryCount - 1) throw testError;
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
         continue;
       }
 
@@ -23,14 +25,16 @@ const getOpenAIKey = async (retryCount = 3) => {
         .from('secrets')
         .select('value')
         .eq('name', 'OPENAI_API_KEY')
-        .maybeSingle();
+        .single();
 
       if (error) {
         console.error(`Попытка ${i + 1}: Ошибка при получении API ключа:`, error);
+        if (i === retryCount - 1) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
         continue;
       }
       
-      if (!data) {
+      if (!data?.value) {
         console.error(`Попытка ${i + 1}: API ключ не найден в таблице secrets`);
         throw new Error('API ключ OpenAI не найден в базе данных');
       }
@@ -45,15 +49,12 @@ const getOpenAIKey = async (retryCount = 3) => {
       });
       
       if (i === retryCount - 1) {
-        throw error;
+        throw new Error(`Не удалось получить API ключ OpenAI после ${retryCount} попыток: ${error.message}`);
       }
       
-      // Ждем перед следующей попыткой
       await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
     }
   }
-  
-  throw new Error('Не удалось получить API ключ OpenAI после нескольких попыток');
 };
 
 // Инициализация OpenAI с ключом из Supabase и повторными попытками
@@ -78,7 +79,11 @@ export const initOpenAI = async (retryCount = 3) => {
     }
     return openai;
   } catch (error) {
-    console.error('Ошибка при инициализации клиента OpenAI:', error);
+    console.error('Ошибка при инициализации клиента OpenAI:', {
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
     throw error;
   }
 };
@@ -96,7 +101,11 @@ export const processPrompt = async (prompt) => {
     console.log('Ответ успешно получен от OpenAI');
     return completion.choices[0].message.content;
   } catch (error) {
-    console.error('Ошибка при обработке промпта:', error);
+    console.error('Ошибка при обработке промпта:', {
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
     throw error;
   }
 };
