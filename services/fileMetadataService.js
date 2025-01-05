@@ -4,18 +4,24 @@ import path from 'path';
 export const saveFileMetadata = async (userId, file, uploadData) => {
   console.log('Начало сохранения метаданных файла:', {
     userId,
-    filePath: file.path
+    filePath: file.path,
+    uploadData
   });
 
   const filePath = `users/${userId}/files/${file.path}`;
 
   try {
     // Получаем текущую версию файла, если она существует
-    const { data: existingFile } = await supabase
+    const { data: existingFile, error: fetchError } = await supabase
       .from('files')
       .select('*')
       .eq('file_path', filePath)
       .maybeSingle();
+
+    if (fetchError) {
+      console.error('Ошибка при получении существующего файла:', fetchError);
+      throw fetchError;
+    }
 
     console.log('Существующий файл:', existingFile);
 
