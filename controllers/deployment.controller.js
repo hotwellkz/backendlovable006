@@ -6,23 +6,62 @@ export const handleDeployment = async (req, res) => {
 
     console.log('Starting deployment process for user:', userId);
 
-    // Создаем запись о развертывании
-    const { data: deployment, error: deploymentError } = await supabase
+    // Проверяем существующие проекты пользователя
+    const { data: existingProjects, error: fetchError } = await supabase
       .from('deployed_projects')
-      .insert({
-        user_id: userId,
-        framework: framework,
-        status: 'preparing'
-      })
-      .select()
-      .single();
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'preparing')
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-    if (deploymentError) {
-      console.error('Error creating deployment record:', deploymentError);
-      throw deploymentError;
+    if (fetchError) {
+      console.error('Error fetching existing projects:', fetchError);
+      throw fetchError;
     }
 
-    console.log('Created deployment record:', deployment.id);
+    let deployment;
+
+    if (existingProjects && existingProjects.length > 0) {
+      // Обновляем существующий проект
+      const { data: updatedDeployment, error: updateError } = await supabase
+        .from('deployed_projects')
+        .update({
+          framework: framework,
+          status: 'preparing',
+          last_deployment: new Date().toISOString()
+        })
+        .eq('id', existingProjects[0].id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Error updating existing deployment:', updateError);
+        throw updateError;
+      }
+
+      deployment = updatedDeployment;
+      console.log('Updated existing deployment:', deployment.id);
+    } else {
+      // Создаем новую запись о развертывании
+      const { data: newDeployment, error: deploymentError } = await supabase
+        .from('deployed_projects')
+        .insert({
+          user_id: userId,
+          framework: framework,
+          status: 'preparing'
+        })
+        .select()
+        .single();
+
+      if (deploymentError) {
+        console.error('Error creating deployment record:', deploymentError);
+        throw deploymentError;
+      }
+
+      deployment = newDeployment;
+      console.log('Created new deployment record:', deployment.id);
+    }
 
     // Имитация процесса упаковки файлов
     await supabase
