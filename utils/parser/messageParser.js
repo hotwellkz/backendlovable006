@@ -91,37 +91,50 @@ export class MessageParser {
 
       // Сохраняем файлы
       for (const file of parsedResponse.files) {
-        // Сначала загружаем файл в Storage
-        const { error: uploadError } = await supabase.storage
-          .from('project_files')
-          .upload(`${userId}/${file.path}`, file.content, {
-            contentType: 'text/plain',
-            upsert: true
+        try {
+          // Сначала загружаем файл в Storage
+          const { error: uploadError } = await supabase.storage
+            .from('project_files')
+            .upload(`${userId}/${file.path}`, file.content, {
+              contentType: 'text/plain',
+              upsert: true
+            });
+
+          if (uploadError) {
+            console.error('Ошибка загрузки в Storage:', uploadError);
+            throw uploadError;
+          }
+
+          console.log('Файл успешно загружен в Storage:', {
+            path: `${userId}/${file.path}`
           });
 
-        if (uploadError) {
-          console.error('Ошибка загрузки в Storage:', uploadError);
-          throw uploadError;
-        }
+          // Затем сохраняем метаданные в таблицу files
+          const { error: fileError } = await supabase
+            .from('files')
+            .upsert({
+              user_id: userId,
+              filename: file.path.split('/').pop(),
+              file_path: `${userId}/${file.path}`,
+              content: file.content,
+              content_type: 'text/plain',
+              size: Buffer.byteLength(file.content, 'utf8'),
+              version: 1,
+              last_modified: new Date().toISOString(),
+              modified_by: userId
+            });
 
-        // Затем сохраняем метаданные в таблицу files
-        const { error: fileError } = await supabase
-          .from('files')
-          .upsert({
-            user_id: userId,
-            filename: file.path.split('/').pop(),
-            file_path: `${userId}/${file.path}`,
-            content: file.content,
-            content_type: 'text/plain',
-            size: Buffer.byteLength(file.content, 'utf8'),
-            version: 1,
-            last_modified: new Date().toISOString(),
-            modified_by: userId
+          if (fileError) {
+            console.error('Ошибка сохранения в files:', fileError);
+            throw fileError;
+          }
+
+          console.log('Метаданные файла сохранены:', {
+            path: `${userId}/${file.path}`
           });
-
-        if (fileError) {
-          console.error('Ошибка сохранения в files:', fileError);
-          throw fileError;
+        } catch (error) {
+          console.error(`Ошибка при обработке файла ${file.path}:`, error);
+          throw error;
         }
       }
 
