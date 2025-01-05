@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import path from 'path';
+import { saveFileToStorage, saveFileMetadata } from '../services/fileService.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -9,69 +10,53 @@ const supabase = createClient(
 export const handleFiles = async (req, res) => {
   try {
     const { files, userId } = req.body;
+    console.log('Получен запрос на сохранение файлов:', { 
+      filesCount: files?.length,
+      userId 
+    });
+
+    if (!files || !Array.isArray(files)) {
+      console.error('Ошибка: files не является массивом');
+      return res.status(400).json({ error: 'Invalid files data' });
+    }
+
     const results = [];
 
     for (const file of files) {
-      const filePath = `${userId}/${file.path}`;
-      
-      // Загружаем файл в Storage
-      const { error: uploadError } = await supabase.storage
-        .from('project_files')
-        .upload(filePath, file.content, {
-          contentType: 'text/plain',
-          upsert: true
-        });
-
-      if (uploadError) throw uploadError;
-
-      // Получаем текущую версию файла, если она существует
-      const { data: existingFile } = await supabase
-        .from('files')
-        .select('*')
-        .eq('file_path', filePath)
-        .single();
-
-      const version = existingFile ? (existingFile.version || 1) + 1 : 1;
-      const previousVersions = existingFile?.previous_versions || [];
-
-      if (existingFile) {
-        previousVersions.push({
-          version: existingFile.version || 1,
-          content: existingFile.content || '',
-          modified_at: existingFile.last_modified || new Date().toISOString(),
-          modified_by: existingFile.modified_by || userId
-        });
-      }
-
-      // Сохраняем метаданные
-      const { error: dbError } = await supabase
-        .from('files')
-        .upsert({
-          user_id: userId,
-          filename: path.basename(file.path),
-          file_path: filePath,
-          content_type: 'text/plain',
-          size: Buffer.byteLength(file.content, 'utf8'),
-          content: file.content,
-          version: version,
-          previous_versions: previousVersions,
-          last_modified: new Date().toISOString(),
-          modified_by: userId
-        });
-
-      if (dbError) throw dbError;
-      
-      results.push({
+      console.log('Обработка файла:', {
         path: file.path,
-        url: `/uploads/${file.path}`,
-        version: version
+        contentLength: file.content?.length
       });
+
+      try {
+        // Сохраняем файл в Storage
+        const uploadData = await saveFileToStorage(userId, file);
+        
+        // Сохраняем метаданные
+        const fileData = await saveFileMetadata(userId, file, uploadData);
+        
+        results.push({
+          path: file.path,
+          url: `/uploads/${file.path}`,
+          version: fileData.version
+        });
+      } catch (error) {
+        console.error(`Ошибка при обработке файла ${file.path}:`, error);
+        throw error;
+      }
     }
+
+    console.log('Все файлы успешно обработаны:', {
+      count: results.length
+    });
 
     res.json({ files: results });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Failed to save files' });
+    console.error('Критическая ошибка при обработке файлов:', error);
+    res.status(500).json({ 
+      error: 'Failed to save files',
+      details: error.message 
+    });
   }
 };
 
