@@ -49,6 +49,32 @@ export const handlePrompt = async (req, res) => {
     // Обрабатываем промпт и получаем структурированный ответ
     const response = await handlePromptProcessing(prompt, framework, userId);
 
+    // Сохраняем файлы в базу данных
+    const savedFiles = [];
+    for (const file of response.files) {
+      const { data: fileData, error: fileError } = await supabase
+        .from('files')
+        .insert({
+          user_id: userId,
+          filename: file.path.split('/').pop(),
+          file_path: file.path,
+          content: file.content,
+          content_type: 'text/plain',
+          size: Buffer.byteLength(file.content, 'utf8'),
+          version: 1
+        })
+        .select()
+        .single();
+
+      if (fileError) {
+        console.error('Ошибка сохранения файла:', fileError);
+        throw fileError;
+      }
+
+      savedFiles.push(fileData);
+      console.log('Файл успешно сохранен:', fileData);
+    }
+
     // Создаем запись о развертывании
     const { data: deployment, error: deployError } = await supabase
       .from('deployed_projects')
@@ -86,7 +112,8 @@ export const handlePrompt = async (req, res) => {
       framework,
       executionTime: executionTime + 'ms',
       deploymentId: deployment.id,
-      containerId: container.id
+      containerId: container.id,
+      savedFiles: savedFiles.length
     });
 
     res.json({
@@ -94,7 +121,8 @@ export const handlePrompt = async (req, res) => {
       success: true,
       executionTime,
       deploymentId: deployment.id,
-      containerId: container.id
+      containerId: container.id,
+      files: savedFiles
     });
     
   } catch (error) {
