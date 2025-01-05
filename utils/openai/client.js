@@ -11,26 +11,34 @@ export const generateResponse = async (prompt, framework) => {
 
   console.log('Отправка запроса к OpenAI с фреймворком:', framework);
   
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { 
-        role: "system", 
-        content: getSystemPrompt(framework)
-      },
-      { role: "user", content: prompt }
-    ],
-    temperature: 0.7,
-    max_tokens: 4000
-  });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { 
+          role: "system", 
+          content: getSystemPrompt(framework)
+        },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 4000,
+      response_format: { type: "json_object" }
+    });
 
-  console.timeEnd('openai_request');
+    console.log('Получен ответ от OpenAI:', completion.choices[0].message);
 
-  if (!completion.choices?.[0]?.message?.content) {
-    throw new Error('Invalid response from OpenAI API');
+    if (!completion.choices?.[0]?.message?.content) {
+      throw new Error('Invalid response from OpenAI API');
+    }
+
+    console.log('Парсинг JSON ответа...');
+    const parsedResponse = JSON.parse(completion.choices[0].message.content);
+    console.log('JSON успешно распарсен');
+    
+    return parsedResponse;
+  } catch (error) {
+    console.error('Ошибка при работе с OpenAI:', error);
+    throw new Error(`Ошибка при обработке ответа от OpenAI: ${error.message}`);
   }
-
-  console.log('Получен ответ от OpenAI, парсинг JSON...');
-  
-  return completion.choices[0].message.content;
 };
