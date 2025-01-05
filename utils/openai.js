@@ -78,11 +78,25 @@ export const initOpenAI = async (retryCount = 3) => {
     }
     return openai;
   } catch (error) {
-    console.error('Критическая ошибка при инициализации OpenAI:', {
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
+    console.error('Ошибка при инициализации клиента OpenAI:', error);
+    throw error;
+  }
+};
+
+export const processPrompt = async (prompt) => {
+  try {
+    const client = await initOpenAI();
+    
+    console.log('Отправка запроса к OpenAI...');
+    const completion = await client.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "gpt-3.5-turbo",
     });
+
+    console.log('Ответ успешно получен от OpenAI');
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('Ошибка при обработке промпта:', error);
     throw error;
   }
 };
