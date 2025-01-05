@@ -11,18 +11,13 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Логирование запросов для отладки
-app.use((req, res, next) => {
-  console.log(`Incoming request: ${req.method} ${req.path}`);
-  console.log('Headers:', req.headers);
-  next();
-});
-
-// Настройка CORS для разрешения запросов с фронтенда
+// Включаем CORS до всех остальных middleware
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Обработка preflight запросов
 
-// Поддержка JSON в запросах
+// Добавляем промежуточное ПО для обработки preflight запросов
+app.options('*', cors(corsOptions));
+
+// Добавляем middleware для парсинга JSON
 app.use(express.json());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,9 +36,10 @@ app.get('/health', (req, res) => {
 
 // Обработка ошибок
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
+  console.error('Ошибка сервера:', err);
+  res.status(500).json({ 
+    error: 'Внутренняя ошибка сервера',
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 
