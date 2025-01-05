@@ -1,46 +1,58 @@
 import OpenAI from 'openai';
 import { supabase } from '../config/supabase.js';
 
-// Переменная для кэширования API ключа
-let cachedApiKey = null;
-
 // Функция для получения API ключа из Supabase
 const getOpenAIKey = async () => {
-  if (cachedApiKey) return cachedApiKey;
+  try {
+    console.log('Получаем API ключ OpenAI из Supabase...');
+    const { data, error } = await supabase
+      .from('secrets')
+      .select('value')
+      .eq('name', 'OPENAI_API_KEY')
+      .single();
 
-  const { data, error } = await supabase
-    .from('secrets')
-    .select('value')
-    .eq('name', 'OPENAI_API_KEY')
-    .single();
+    if (error) {
+      console.error('Ошибка при получении API ключа:', error);
+      throw new Error('Не удалось получить API ключ OpenAI');
+    }
+    
+    if (!data || !data.value) {
+      console.error('API ключ не найден в базе данных');
+      throw new Error('API ключ OpenAI не найден');
+    }
 
-  if (error) {
-    console.error('Ошибка при получении ключа OpenAI из Supabase:', error.message);
-    throw new Error('Не удалось получить API ключ OpenAI из таблицы secrets в Supabase.');
+    return data.value;
+  } catch (error) {
+    console.error('Критическая ошибка при получении API ключа:', {
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+    throw error;
   }
-
-  if (!data || !data.value) {
-    throw new Error('API ключ OpenAI отсутствует в таблице secrets в Supabase.');
-  }
-
-  cachedApiKey = data.value; // Кэшируем ключ
-  return cachedApiKey;
 };
 
 // Инициализация OpenAI с ключом из Supabase
 let openai = null;
-
 export const initOpenAI = async () => {
   try {
     if (!openai) {
-      console.log('Инициализация OpenAI...');
+      console.log('Инициализация клиента OpenAI...');
       const apiKey = await getOpenAIKey();
-      openai = new OpenAI({ apiKey });
-      console.log('OpenAI успешно инициализирован');
+      openai = new OpenAI({ 
+        apiKey,
+        timeout: 30000, // 30 секунд таймаут для всех запросов
+        maxRetries: 2 // Максимальное количество повторных попыток
+      });
+      console.log('Клиент OpenAI успешно инициализирован');
     }
     return openai;
   } catch (error) {
-    console.error('Ошибка инициализации OpenAI:', error.message);
-    throw new Error('Не удалось инициализировать OpenAI.');
+    console.error('Критическая ошибка при инициализации OpenAI:', {
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+    throw error;
   }
 };
