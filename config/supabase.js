@@ -11,8 +11,8 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 console.log('Initializing Supabase client with config:', {
   url: process.env.SUPABASE_URL,
   hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-  region: 'eu-central-1',
-  storageEndpoint: 'https://xbvjposgjusjngetlpfa.supabase.co/storage/v1/s3'
+  region: process.env.SUPABASE_STORAGE_REGION || 'eu-central-1',
+  storageEndpoint: process.env.SUPABASE_STORAGE_ENDPOINT
 });
 
 export const supabase = createClient(
@@ -29,6 +29,10 @@ export const supabase = createClient(
     global: {
       headers: { 'x-my-custom-header': 'my-app-name' },
     },
+    storage: {
+      storageApiKey: process.env.SUPABASE_STORAGE_ACCESS_KEY,
+      storageSecretKey: process.env.SUPABASE_STORAGE_SECRET_KEY
+    }
   }
 );
 
