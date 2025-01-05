@@ -3,58 +3,111 @@ import { supabase } from '../config/supabase.js';
 import os from 'os';
 
 export const handlePrompt = async (req, res) => {
+  const startTime = Date.now();
+  
   try {
-    // Логируем использование системных ресурсов
-    console.log('Свободная память:', os.freemem() / 1024 / 1024, 'MB');
-    console.log('Загрузка CPU:', os.loadavg());
-    console.log('Всего памяти:', os.totalmem() / 1024 / 1024, 'MB');
+    // Расширенное логирование системных ресурсов
+    const systemInfo = {
+      freeMem: (os.freemem() / 1024 / 1024).toFixed(2) + ' MB',
+      totalMem: (os.totalmem() / 1024 / 1024).toFixed(2) + ' MB',
+      cpuLoad: os.loadavg(),
+      uptime: os.uptime(),
+      platform: os.platform(),
+      arch: os.arch()
+    };
+    
+    console.log('Системная информация:', systemInfo);
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error('Некорректный формат заголовка авторизации');
-      return res.status(401).json({ error: 'Некорректный формат заголовка авторизации' });
+      console.error('Ошибка авторизации:', { 
+        header: authHeader,
+        timestamp: new Date().toISOString()
+      });
+      return res.status(401).json({ 
+        error: 'Некорректный формат заголовка авторизации',
+        details: 'Требуется заголовок в формате: Bearer <token>'
+      });
     }
 
     const token = authHeader.split(' ')[1];
-    console.log('Получен токен авторизации:', token.substring(0, 10) + '...');
-
-    console.log('Получен запрос:', {
-      headers: req.headers,
-      body: req.body,
-      method: req.method
+    console.log('Получен токен:', {
+      tokenPreview: token.substring(0, 10) + '...',
+      timestamp: new Date().toISOString()
     });
+
+    const requestInfo = {
+      method: req.method,
+      path: req.path,
+      headers: {
+        ...req.headers,
+        authorization: 'Bearer [HIDDEN]'
+      },
+      body: {
+        ...req.body,
+        prompt: req.body.prompt?.substring(0, 100) + '...'
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('Детали запроса:', requestInfo);
 
     const { prompt, framework, userId } = req.body;
 
     if (!prompt || !framework || !userId) {
-      console.error('Отсутствуют обязательные параметры:', { prompt, framework, userId });
-      return res.status(400).json({ error: 'Отсутствуют обязательные параметры' });
+      const missingParams = {
+        prompt: !prompt,
+        framework: !framework,
+        userId: !userId
+      };
+      console.error('Отсутствуют параметры:', missingParams);
+      return res.status(400).json({ 
+        error: 'Отсутствуют обязательные параметры',
+        details: missingParams
+      });
     }
 
-    // Проверяем валидность токена через Supabase
+    // Проверка токена через Supabase с расширенным логированием
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
-      console.error('Ошибка авторизации:', authError);
-      return res.status(401).json({ error: 'Недействительный токен авторизации' });
+      console.error('Ошибка проверки токена:', {
+        error: authError,
+        token: token.substring(0, 10) + '...',
+        timestamp: new Date().toISOString()
+      });
+      return res.status(401).json({ 
+        error: 'Недействительный токен авторизации',
+        details: authError?.message
+      });
     }
 
     if (user.id !== userId) {
-      console.error('Несоответствие userId:', { 
-        requestUserId: userId, 
-        tokenUserId: user.id 
+      console.error('Несоответствие ID пользователя:', {
+        requestUserId: userId,
+        tokenUserId: user.id,
+        timestamp: new Date().toISOString()
       });
-      return res.status(403).json({ error: 'Доступ запрещен' });
+      return res.status(403).json({ 
+        error: 'Доступ запрещен',
+        details: 'ID пользователя не соответствует токену'
+      });
     }
 
-    // Инициализируем OpenAI
+    // Инициализация OpenAI с отслеживанием времени
+    console.time('openai_init');
     const openai = await initOpenAI();
+    console.timeEnd('openai_init');
+
     if (!openai) {
-      console.error('Не удалось инициализировать OpenAI');
-      return res.status(500).json({ error: 'Ошибка инициализации OpenAI' });
+      console.error('Ошибка инициализации OpenAI');
+      return res.status(500).json({ 
+        error: 'Ошибка инициализации OpenAI',
+        details: 'Не удалось создать клиент OpenAI'
+      });
     }
 
-    // Сохраняем промпт пользователя с дополнительной информацией
+    // Сохранение промпта пользователя
     const { error: chatError } = await supabase
       .from('chat_history')
       .insert({
@@ -65,12 +118,25 @@ export const handlePrompt = async (req, res) => {
       });
 
     if (chatError) {
-      console.error('Ошибка при сохранении в chat_history:', chatError);
-      return res.status(500).json({ error: 'Ошибка при сохранении в базу данных' });
+      console.error('Ошибка сохранения в chat_history:', {
+        error: chatError,
+        userId,
+        timestamp: new Date().toISOString()
+      });
+      return res.status(500).json({ 
+        error: 'Ошибка при сохранении в базу данных',
+        details: chatError.message
+      });
     }
 
-    // Формируем системный промпт
-    let systemPrompt = `You are a helpful assistant that generates structured responses for code generation. 
+    // Формирование системного промпта с учетом фреймворка
+    const frameworkPrompts = {
+      react: " You specialize in creating React applications with TypeScript, React Router, and Tailwind CSS.",
+      node: " You specialize in creating Node.js applications with Express.js, MongoDB/Mongoose, and JWT authentication.",
+      vue: " You specialize in creating Vue.js applications with TypeScript, Vue Router, and Vuex."
+    };
+
+    const systemPrompt = `You are a helpful assistant that generates structured responses for code generation. 
     Your response must always be in the following JSON format:
     {
       "files": [
@@ -82,97 +148,104 @@ export const handlePrompt = async (req, res) => {
       ],
       "description": "Detailed explanation of changes",
       "dependencies": ["package1", "package2"]
-    }`;
+    }${frameworkPrompts[framework] || ''}`;
 
-    switch (framework) {
-      case 'react':
-        systemPrompt += " You specialize in creating React applications with TypeScript, React Router, and Tailwind CSS.";
-        break;
-      case 'node':
-        systemPrompt += " You specialize in creating Node.js applications with Express.js, MongoDB/Mongoose, and JWT authentication.";
-        break;
-      case 'vue':
-        systemPrompt += " You specialize in creating Vue.js applications with TypeScript, Vue Router, and Vuex.";
-        break;
-    }
-
-    console.log('Отправляем запрос к OpenAI с параметрами:', {
+    console.log('Отправка запроса к OpenAI:', {
       model: "gpt-4",
-      systemPrompt,
-      userPrompt: prompt,
+      promptLength: prompt.length,
+      framework,
       timestamp: new Date().toISOString()
     });
 
+    // Запрос к OpenAI с отслеживанием времени
+    console.time('openai_request');
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 4000
+    });
+    console.timeEnd('openai_request');
+
+    if (!completion.choices?.[0]?.message?.content) {
+      console.error('Некорректный ответ от OpenAI:', completion);
+      return res.status(500).json({ 
+        error: 'Некорректный ответ от OpenAI API',
+        details: 'Отсутствует содержимое ответа'
+      });
+    }
+
+    const aiMessage = completion.choices[0].message.content;
+    console.log('Получен ответ от OpenAI длиной:', aiMessage.length);
+
+    let response;
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 4000
+      response = JSON.parse(aiMessage);
+    } catch (error) {
+      console.error('Ошибка парсинга JSON:', {
+        error,
+        aiMessage: aiMessage.substring(0, 100) + '...'
+      });
+      return res.status(500).json({ 
+        error: 'Некорректный формат ответа от OpenAI',
+        details: error.message
+      });
+    }
+
+    // Сохранение ответа ИИ
+    const { error: aiChatError } = await supabase
+      .from('chat_history')
+      .insert({
+        user_id: userId,
+        prompt: response.description,
+        is_ai: true,
+        timestamp: new Date().toISOString(),
       });
 
-      if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
-        console.error('Некорректный ответ от OpenAI API:', completion);
-        throw new Error('Некорректный ответ от OpenAI API');
-      }
-
-      const aiMessage = completion.choices[0].message.content;
-      console.log('Получен ответ от OpenAI:', aiMessage);
-
-      let response;
-      try {
-        response = JSON.parse(aiMessage);
-      } catch (error) {
-        console.error('Ошибка парсинга JSON ответа:', error);
-        throw new Error('Некорректный формат ответа от OpenAI');
-      }
-
-      // Сохраняем ответ ИИ с дополнительной информацией
-      const { error: aiChatError } = await supabase
-        .from('chat_history')
-        .insert({
-          user_id: userId,
-          prompt: response.description,
-          is_ai: true,
-          timestamp: new Date().toISOString(),
-        });
-
-      if (aiChatError) {
-        console.error('Ошибка при сохранении ответа ИИ:', aiChatError);
-        throw new Error('Ошибка при сохранении ответа в базу данных');
-      }
-
-      // Логируем успешное выполнение
-      console.log('Запрос успешно обработан:', {
+    if (aiChatError) {
+      console.error('Ошибка сохранения ответа ИИ:', {
+        error: aiChatError,
         userId,
-        framework,
-        promptLength: prompt.length,
-        responseLength: JSON.stringify(response).length,
         timestamp: new Date().toISOString()
       });
-
-      res.json({
-        ...response,
-        success: true
+      return res.status(500).json({ 
+        error: 'Ошибка при сохранении ответа в базу данных',
+        details: aiChatError.message
       });
-      
-    } catch (openAiError) {
-      console.error('Ошибка при запросе к OpenAI:', openAiError);
-      throw new Error(`Ошибка при запросе к OpenAI: ${openAiError.message}`);
     }
+
+    const executionTime = Date.now() - startTime;
+    console.log('Запрос успешно обработан:', {
+      userId,
+      framework,
+      executionTime: executionTime + 'ms',
+      promptLength: prompt.length,
+      responseLength: JSON.stringify(response).length,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({
+      ...response,
+      success: true,
+      executionTime
+    });
     
   } catch (error) {
+    const executionTime = Date.now() - startTime;
     console.error('Критическая ошибка:', {
       error: error.message,
       stack: error.stack,
+      executionTime: executionTime + 'ms',
       timestamp: new Date().toISOString()
     });
+    
     res.status(500).json({
       error: 'Ошибка при обработке запроса',
-      details: error.message
+      details: error.message,
+      executionTime
     });
   }
 };
