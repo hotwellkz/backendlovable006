@@ -31,6 +31,8 @@ export const saveChatHistory = async (userId, prompt, isAi = false) => {
 };
 
 export const handlePromptProcessing = async (prompt, framework, userId) => {
+  console.log('Начало обработки промпта:', { framework, userId });
+  
   validateRequest(prompt, framework, userId);
   
   // Сохраняем промпт пользователя
@@ -43,6 +45,10 @@ export const handlePromptProcessing = async (prompt, framework, userId) => {
   let response;
   try {
     response = JSON.parse(aiResponse);
+    console.log('Успешно распарсен ответ AI:', {
+      filesCount: response.files?.length,
+      description: response.description?.substring(0, 100) + '...'
+    });
   } catch (error) {
     console.error('Error parsing OpenAI response:', error);
     throw new Error('Invalid response format from AI');
