@@ -4,9 +4,16 @@ import { processFileGeneration } from './processors/fileProcessor.js';
 import { processDockerOperations } from './processors/dockerProcessor.js';
 
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
+  host: process.env.REDIS_HOST || 'red-ctt8scdds78s73clcnl0',
   port: parseInt(process.env.REDIS_PORT, 10) || 6379,
+  url: process.env.REDIS_URL || 'redis://red-ctt8scdds78s73clcnl0:6379'
 };
+
+console.log('Initializing Redis connection with config:', {
+  host: redisConfig.host,
+  port: redisConfig.port,
+  url: redisConfig.url
+});
 
 // Создаем очереди для разных операций
 export const openaiQueue = new Queue('openai-processing', { redis: redisConfig });
