@@ -1,10 +1,5 @@
-import Docker from 'dockerode';
+import { docker } from '../config/docker.js';
 import { supabase } from '../config/supabase.js';
-
-const docker = new Docker({ 
-  host: process.env.DOCKER_HOST || 'http://localhost',
-  port: process.env.DOCKER_PORT || 2375
-});
 
 export const createAndStartContainer = async (userId, projectId, framework, files) => {
   try {
@@ -31,9 +26,19 @@ export const createAndStartContainer = async (userId, projectId, framework, file
       ]
     };
 
-    // Создаем контейнер
-    console.log('Creating container with config:', containerConfig);
+    // Проверяем подключение к Docker с расширенным логированием
+    console.log('Verifying Docker connection...');
+    await docker.ping();
+    console.log('Docker connection verified');
+
+    // Получаем список существующих контейнеров
+    const containers = await docker.listContainers({ all: true });
+    console.log('Existing containers:', containers.length);
+
+    // Создаем контейнер с подробным логированием
+    console.log('Creating container with config:', JSON.stringify(containerConfig, null, 2));
     const container = await docker.createContainer(containerConfig);
+    console.log('Container created:', container.id);
     
     // Обновляем статус в базе данных
     await supabase
@@ -48,12 +53,25 @@ export const createAndStartContainer = async (userId, projectId, framework, file
     // Запускаем контейнер
     console.log('Starting container:', container.id);
     await container.start();
+    console.log('Container started successfully');
+
+    // Получаем информацию о контейнере
+    const containerInfo = await container.inspect();
+    console.log('Container info:', {
+      id: containerInfo.Id,
+      state: containerInfo.State,
+      network: containerInfo.NetworkSettings
+    });
+
+    const containerUrl = `http://${containerInfo.NetworkSettings.IPAddress}:3000`;
+    console.log('Container URL:', containerUrl);
 
     // Обновляем статус после запуска
     await supabase
       .from('docker_containers')
       .update({ 
         status: 'running',
+        container_url: containerUrl,
         container_logs: 'Container started successfully'
       })
       .eq('project_id', projectId);
@@ -61,11 +79,17 @@ export const createAndStartContainer = async (userId, projectId, framework, file
     return {
       containerId: container.id,
       containerName,
+      containerUrl,
       status: 'running'
     };
 
   } catch (error) {
     console.error('Error in createAndStartContainer:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      statusCode: error.statusCode
+    });
     
     // Обновляем статус с ошибкой
     await supabase
@@ -105,7 +129,8 @@ export const getContainerLogs = async (containerId) => {
     const logs = await container.logs({
       stdout: true,
       stderr: true,
-      tail: 100
+      tail: 100,
+      follow: false
     });
     
     return logs.toString('utf8');
