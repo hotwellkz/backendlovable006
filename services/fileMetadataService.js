@@ -7,7 +7,7 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
     filePath: file.path
   });
 
-  const filePath = `${userId}/${file.path}`;
+  const filePath = `users/${userId}/files/${file.path}`;
 
   try {
     // Получаем текущую версию файла, если она существует
@@ -20,6 +20,7 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
     const version = existingFile ? (existingFile.version || 1) + 1 : 1;
     const previousVersions = existingFile?.previous_versions || [];
 
+    // Если файл существует, сохраняем его текущую версию в историю
     if (existingFile) {
       previousVersions.push({
         version: existingFile.version || 1,
@@ -29,6 +30,7 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
       });
     }
 
+    // Сохраняем или обновляем метаданные файла
     const { data: fileData, error: dbError } = await supabase
       .from('files')
       .upsert({
@@ -41,7 +43,8 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
         version: version,
         previous_versions: previousVersions,
         last_modified: new Date().toISOString(),
-        modified_by: userId
+        modified_by: userId,
+        public_url: uploadData.publicUrl
       })
       .select()
       .single();
@@ -54,7 +57,8 @@ export const saveFileMetadata = async (userId, file, uploadData) => {
     console.log('Метаданные файла сохранены:', {
       id: fileData.id,
       path: fileData.file_path,
-      version
+      version,
+      url: fileData.public_url
     });
 
     return fileData;
