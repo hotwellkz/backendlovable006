@@ -4,7 +4,8 @@ export const saveToStorage = async (userId, file) => {
   console.log('Начало сохранения файла в Storage:', {
     userId,
     filePath: file.path,
-    contentLength: file.content?.length
+    contentLength: file.content?.length,
+    contentType: typeof file.content
   });
 
   if (!file.content) {
@@ -16,10 +17,18 @@ export const saveToStorage = async (userId, file) => {
   const filePath = `users/${userId}/files/${file.path}`;
   
   try {
-    console.log('Подготовка к загрузке файла:', { filePath });
+    console.log('Подготовка к загрузке файла:', { 
+      filePath,
+      contentType: typeof file.content 
+    });
     
     // Конвертируем содержимое в Uint8Array для загрузки
     const contentBuffer = new TextEncoder().encode(file.content);
+
+    console.log('Контент подготовлен для загрузки:', {
+      bufferLength: contentBuffer.length,
+      firstBytes: contentBuffer.slice(0, 10)
+    });
 
     // Загружаем файл в Storage с метаданными
     const { data: uploadData, error: uploadError } = await supabase.storage
