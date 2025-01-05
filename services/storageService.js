@@ -1,16 +1,23 @@
 import { supabase } from '../config/supabase.js';
 
 export const saveToStorage = async (userId, file) => {
-  console.log('Сохранение файла в Storage:', {
+  console.log('Начало сохранения файла в Storage:', {
     userId,
     filePath: file.path,
     contentLength: file.content?.length
   });
 
+  if (!file.content) {
+    console.error('Ошибка: содержимое файла отсутствует');
+    throw new Error('File content is required');
+  }
+
   // Формируем путь в формате users/{userId}/files/{filename}
   const filePath = `users/${userId}/files/${file.path}`;
   
   try {
+    console.log('Подготовка к загрузке файла:', { filePath });
+    
     // Конвертируем содержимое в Uint8Array для загрузки
     const contentBuffer = new TextEncoder().encode(file.content);
 
@@ -32,6 +39,8 @@ export const saveToStorage = async (userId, file) => {
       throw uploadError;
     }
 
+    console.log('Файл успешно загружен:', uploadData);
+
     // Получаем публичную ссылку на файл
     const { data: { publicUrl }, error: urlError } = await supabase.storage
       .from('project_files')
@@ -42,18 +51,14 @@ export const saveToStorage = async (userId, file) => {
       throw urlError;
     }
 
-    console.log('Файл успешно загружен в Storage:', {
-      path: filePath,
-      url: publicUrl,
-      uploadData
-    });
+    console.log('Получена публичная ссылка:', publicUrl);
 
     return {
       ...uploadData,
       publicUrl
     };
   } catch (error) {
-    console.error('Ошибка при сохранении файла:', error);
+    console.error('Критическая ошибка при сохранении файла:', error);
     throw error;
   }
 };
