@@ -10,10 +10,13 @@ export const handlePrompt = async (req, res) => {
     console.log('Всего памяти:', os.totalmem() / 1024 / 1024, 'MB');
 
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      console.error('Отсутствует заголовок авторизации');
-      return res.status(401).json({ error: 'Необходима авторизация' });
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('Некорректный формат заголовка авторизации');
+      return res.status(401).json({ error: 'Некорректный формат заголовка авторизации' });
     }
+
+    const token = authHeader.split(' ')[1];
+    console.log('Получен токен авторизации:', token.substring(0, 10) + '...');
 
     console.log('Получен запрос:', {
       headers: req.headers,
@@ -29,9 +32,7 @@ export const handlePrompt = async (req, res) => {
     }
 
     // Проверяем валидность токена через Supabase
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    );
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
       console.error('Ошибка авторизации:', authError);
