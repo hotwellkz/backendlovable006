@@ -15,14 +15,12 @@ export class MessageParser {
     try {
       console.log('Начало парсинга ответа OpenAI:', response);
       
-      // Проверяем наличие content в ответе
       if (!response?.choices?.[0]?.message?.content) {
         throw new Error('Некорректный формат ответа от OpenAI');
       }
 
       const content = response.choices[0].message.content;
       
-      // Пытаемся распарсить JSON
       try {
         const parsedContent = JSON.parse(content);
         console.log('Успешно распарсен JSON:', parsedContent);
@@ -30,7 +28,6 @@ export class MessageParser {
       } catch (jsonError) {
         console.error('Ошибка парсинга JSON:', jsonError);
         
-        // Если не удалось распарсить JSON, пробуем извлечь структурированные данные
         const files = this.extractFiles(content);
         const description = this.extractDescription(content);
         
@@ -59,11 +56,12 @@ export class MessageParser {
         files.push({
           path: pathMatch[1].trim(),
           content: fileContent.trim(),
-          type: 'create'
+          action: 'create'
         });
       }
     }
 
+    console.log('Извлеченные файлы:', files);
     return files;
   }
 
@@ -74,6 +72,9 @@ export class MessageParser {
 
   async saveToSupabase(userId, parsedResponse) {
     try {
+      console.log('Сохранение в Supabase для пользователя:', userId);
+      console.log('Данные для сохранения:', parsedResponse);
+
       // Сохраняем описание в историю чата
       const { error: chatError } = await supabase
         .from('chat_history')
@@ -83,23 +84,48 @@ export class MessageParser {
           is_ai: true
         });
 
-      if (chatError) throw chatError;
+      if (chatError) {
+        console.error('Ошибка сохранения в chat_history:', chatError);
+        throw chatError;
+      }
 
       // Сохраняем файлы
       for (const file of parsedResponse.files) {
+        // Сначала загружаем файл в Storage
+        const { error: uploadError } = await supabase.storage
+          .from('project_files')
+          .upload(`${userId}/${file.path}`, file.content, {
+            contentType: 'text/plain',
+            upsert: true
+          });
+
+        if (uploadError) {
+          console.error('Ошибка загрузки в Storage:', uploadError);
+          throw uploadError;
+        }
+
+        // Затем сохраняем метаданные в таблицу files
         const { error: fileError } = await supabase
           .from('files')
-          .insert({
+          .upsert({
             user_id: userId,
             filename: file.path.split('/').pop(),
             file_path: `${userId}/${file.path}`,
             content: file.content,
-            content_type: 'text/plain'
+            content_type: 'text/plain',
+            size: Buffer.byteLength(file.content, 'utf8'),
+            version: 1,
+            last_modified: new Date().toISOString(),
+            modified_by: userId
           });
 
-        if (fileError) throw fileError;
+        if (fileError) {
+          console.error('Ошибка сохранения в files:', fileError);
+          throw fileError;
+        }
       }
 
+      console.log('Данные успешно сохранены в Supabase');
       return true;
     } catch (error) {
       console.error('Ошибка сохранения в Supabase:', error);
