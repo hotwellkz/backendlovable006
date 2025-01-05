@@ -1,8 +1,11 @@
 import { supabase } from '../config/supabase.js';
+import { createAndStartContainer, getContainerLogs } from '../services/dockerService.js';
 
 export const handleDeployment = async (req, res) => {
   try {
     const { userId, files, framework } = req.body;
+    const BUILD_TIMEOUT = 300000; // 5 минут максимум на сборку
+    let timeoutId;
 
     console.log('Starting deployment process for user:', userId);
 
@@ -29,7 +32,8 @@ export const handleDeployment = async (req, res) => {
         .update({
           framework: framework,
           status: 'preparing',
-          last_deployment: new Date().toISOString()
+          last_deployment: new Date().toISOString(),
+          container_logs: 'Инициализация процесса сборки...'
         })
         .eq('id', existingProjects[0].id)
         .select()
@@ -49,7 +53,8 @@ export const handleDeployment = async (req, res) => {
         .insert({
           user_id: userId,
           framework: framework,
-          status: 'preparing'
+          status: 'preparing',
+          container_logs: 'Создание нового проекта...'
         })
         .select()
         .single();
@@ -63,77 +68,82 @@ export const handleDeployment = async (req, res) => {
       console.log('Created new deployment record:', deployment.id);
     }
 
-    // Имитация процесса упаковки файлов
-    await supabase
-      .from('deployed_projects')
-      .update({ 
-        status: 'packaging',
-      })
-      .eq('id', deployment.id);
-
-    console.log('Packaging files...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Имитация процесса сборки
-    await supabase
-      .from('deployed_projects')
-      .update({ 
-        status: 'building',
-      })
-      .eq('id', deployment.id);
-
-    console.log('Building project...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Имитация процесса развертывания
-    await supabase
-      .from('deployed_projects')
-      .update({ 
-        status: 'deploying',
-      })
-      .eq('id', deployment.id);
-
-    console.log('Deploying project...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Генерируем URL для демонстрации
-    const deploymentUrl = `https://lovable${deployment.id.slice(0, 6)}.netlify.app`;
-
-    // Обновляем статус и URL проекта
-    const { error: updateError } = await supabase
-      .from('deployed_projects')
-      .update({ 
-        status: 'deployed',
-        project_url: deploymentUrl,
-        last_deployment: new Date().toISOString()
-      })
-      .eq('id', deployment.id);
-
-    if (updateError) {
-      console.error('Error updating deployment status:', updateError);
-      throw updateError;
-    }
-
-    console.log('Deployment completed successfully:', deploymentUrl);
-
-    res.json({ 
-      success: true, 
-      deploymentUrl,
-      deploymentId: deployment.id
-    });
-  } catch (error) {
-    console.error('Deployment error:', error);
-
-    // Обновляем статус на ошибку, если есть ID развертывания
-    if (error.deploymentId) {
+    // Устанавливаем таймаут для всего процесса
+    timeoutId = setTimeout(async () => {
+      console.error('Deployment timeout reached for:', deployment.id);
       await supabase
         .from('deployed_projects')
         .update({ 
           status: 'error',
-          last_deployment: new Date().toISOString()
+          last_deployment: new Date().toISOString(),
+          container_logs: 'Превышено время ожидания сборки (5 минут)'
         })
-        .eq('id', error.deploymentId);
+        .eq('id', deployment.id);
+
+      res.status(408).json({ 
+        success: false, 
+        error: 'Превышено время ожидания сборки (5 минут)'
+      });
+    }, BUILD_TIMEOUT);
+
+    try {
+      // Создаем и запускаем Docker контейнер
+      const containerResult = await createAndStartContainer(
+        userId,
+        deployment.id,
+        framework,
+        files
+      );
+
+      // Получаем URL для демонстрации
+      const deploymentUrl = `https://lovable${deployment.id.slice(0, 6)}.netlify.app`;
+
+      // Обновляем финальный статус
+      const { error: finalUpdateError } = await supabase
+        .from('deployed_projects')
+        .update({ 
+          status: 'deployed',
+          project_url: deploymentUrl,
+          last_deployment: new Date().toISOString(),
+          container_logs: await getContainerLogs(containerResult.containerId)
+        })
+        .eq('id', deployment.id);
+
+      if (finalUpdateError) {
+        console.error('Error updating final deployment status:', finalUpdateError);
+        throw finalUpdateError;
+      }
+
+      // Очищаем таймаут
+      clearTimeout(timeoutId);
+
+      console.log('Deployment completed successfully:', deploymentUrl);
+
+      res.json({ 
+        success: true, 
+        deploymentUrl,
+        deploymentId: deployment.id,
+        containerId: containerResult.containerId
+      });
+
+    } catch (error) {
+      console.error('Error during container operations:', error);
+      
+      // Обновляем статус на ошибку
+      await supabase
+        .from('deployed_projects')
+        .update({ 
+          status: 'error',
+          last_deployment: new Date().toISOString(),
+          container_logs: `Ошибка: ${error.message || 'Неизвестная ошибка'}`
+        })
+        .eq('id', deployment.id);
+
+      throw error;
     }
+
+  } catch (error) {
+    console.error('Deployment error:', error);
 
     res.status(500).json({ 
       success: false, 
