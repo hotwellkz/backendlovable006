@@ -7,11 +7,13 @@ export const createAndStartContainer = async (userId, projectId, framework, file
 
     // Создаем временную директорию для файлов проекта
     const containerName = `app-${projectId.slice(0, 8)}`;
-    
-    // Подготавливаем конфигурацию контейнера с обновленными настройками
+
+    // Подготавливаем конфигурацию контейнера с правильными настройками для Node.js
     const containerConfig = {
-      Image: framework === 'react' ? 'node:18' : 'node:18',
+      Image: 'node:18-alpine', // Используем alpine для меньшего размера
       name: containerName,
+      Tty: true, // Важно для работы с логами
+      OpenStdin: true,
       ExposedPorts: {
         '3000/tcp': {}
       },
@@ -19,33 +21,70 @@ export const createAndStartContainer = async (userId, projectId, framework, file
         PortBindings: {
           '3000/tcp': [{ HostPort: '3000' }]
         },
-        // Добавляем настройки для работы с Render
         RestartPolicy: {
-          Name: 'always'
+          Name: 'on-failure',
+          MaximumRetryCount: 3
         },
-        NetworkMode: 'bridge'
+        NetworkMode: 'bridge',
+        // Добавляем больше памяти и CPU
+        Memory: 512 * 1024 * 1024, // 512MB
+        MemorySwap: 1024 * 1024 * 1024, // 1GB
+        CpuShares: 512
       },
       Env: [
         `PROJECT_ID=${projectId}`,
         `USER_ID=${userId}`,
+        'NODE_ENV=production',
+        'PORT=3000',
         `BACKEND_URL=https://backendlovable006.onrender.com`
-      ]
+      ],
+      // Добавляем рабочую директорию и команду для запуска
+      WorkingDir: '/app',
+      Cmd: ["/bin/sh", "-c", "npm install && npm start"]
     };
 
-    // Проверяем подключение к Docker с расширенным логированием
+    // Проверяем подключение к Docker
     console.log('Verifying Docker connection...');
     await docker.ping();
     console.log('Docker connection verified');
 
-    // Получаем список существующих контейнеров
-    const containers = await docker.listContainers({ all: true });
-    console.log('Existing containers:', containers.length);
-
-    // Создаем контейнер с подробным логированием
+    // Создаем контейнер
     console.log('Creating container with config:', JSON.stringify(containerConfig, null, 2));
     const container = await docker.createContainer(containerConfig);
     console.log('Container created:', container.id);
-    
+
+    // Подготавливаем файлы для контейнера
+    console.log('Preparing files for container...');
+    const fileContents = files.map(file => ({
+      path: file.path,
+      content: file.content
+    }));
+
+    // Создаем package.json если его нет
+    const hasPackageJson = fileContents.some(f => f.path === 'package.json');
+    if (!hasPackageJson) {
+      fileContents.push({
+        path: 'package.json',
+        content: JSON.stringify({
+          name: containerName,
+          version: '1.0.0',
+          private: true,
+          scripts: {
+            start: 'node index.js'
+          }
+        })
+      });
+    }
+
+    // Записываем файлы в контейнер
+    for (const file of fileContents) {
+      console.log(`Writing file: ${file.path}`);
+      await container.putArchive(
+        Buffer.from(JSON.stringify({ [file.path]: file.content })),
+        { path: '/app' }
+      );
+    }
+
     // Обновляем статус в базе данных
     await supabase
       .from('docker_containers')
@@ -69,7 +108,7 @@ export const createAndStartContainer = async (userId, projectId, framework, file
       network: containerInfo.NetworkSettings
     });
 
-    // Обновляем URL контейнера для работы с Render
+    // Формируем URL для доступа к контейнеру
     const containerUrl = `https://docker-jy4o.onrender.com/container/${containerInfo.Id}`;
     console.log('Container URL:', containerUrl);
 
@@ -97,7 +136,7 @@ export const createAndStartContainer = async (userId, projectId, framework, file
       code: error.code,
       statusCode: error.statusCode
     });
-    
+
     // Обновляем статус с ошибкой
     await supabase
       .from('docker_containers')
@@ -114,15 +153,15 @@ export const createAndStartContainer = async (userId, projectId, framework, file
 export const stopAndRemoveContainer = async (containerId) => {
   try {
     const container = docker.getContainer(containerId);
-    
+
     // Останавливаем контейнер
     await container.stop();
     console.log('Container stopped:', containerId);
-    
+
     // Удаляем контейнер
     await container.remove();
     console.log('Container removed:', containerId);
-    
+
     return true;
   } catch (error) {
     console.error('Error in stopAndRemoveContainer:', error);
@@ -139,7 +178,7 @@ export const getContainerLogs = async (containerId) => {
       tail: 100,
       follow: false
     });
-    
+
     return logs.toString('utf8');
   } catch (error) {
     console.error('Error getting container logs:', error);
