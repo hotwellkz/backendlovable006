@@ -9,9 +9,6 @@ const dockerConfig = {
   protocol: 'https',
   version: 'v1.41',
   timeout: 180000,
-  ca: process.env.DOCKER_CA,
-  cert: process.env.DOCKER_CERT,
-  key: process.env.DOCKER_KEY,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -23,15 +20,12 @@ console.log('Инициализация Docker клиента с конфигу�
   host: dockerConfig.host,
   port: dockerConfig.port,
   protocol: dockerConfig.protocol,
-  version: dockerConfig.version,
-  hasCert: !!dockerConfig.cert,
-  hasKey: !!dockerConfig.key,
-  hasCA: !!dockerConfig.ca
+  version: dockerConfig.version
 });
 
 const docker = new Docker({
   ...dockerConfig,
-  agent: false, // Отключаем http agent
+  agent: false, // Отключаем http agent для тестирования без SSL
   Promise: Promise
 });
 
