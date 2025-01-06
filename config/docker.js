@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const dockerConfig = {
-  host: process.env.DOCKER_HOST || 'docker-jy4o.onrender.com',
-  port: process.env.DOCKER_PORT || 443,
+  host: 'docker-jy4o.onrender.com',
+  port: 443,
   protocol: 'https',
   version: 'v1.41',
   timeout: 180000,
