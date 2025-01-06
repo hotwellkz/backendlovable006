@@ -8,7 +8,7 @@ export const createAndStartContainer = async (userId, projectId, framework, file
     // Создаем временную директорию для файлов проекта
     const containerName = `app-${projectId.slice(0, 8)}`;
     
-    // Подготавливаем конфигурацию контейнера
+    // Подготавливаем конфигурацию контейнера с обновленными настройками
     const containerConfig = {
       Image: framework === 'react' ? 'node:18' : 'node:18',
       name: containerName,
@@ -18,11 +18,17 @@ export const createAndStartContainer = async (userId, projectId, framework, file
       HostConfig: {
         PortBindings: {
           '3000/tcp': [{ HostPort: '3000' }]
-        }
+        },
+        // Добавляем настройки для работы с Render
+        RestartPolicy: {
+          Name: 'always'
+        },
+        NetworkMode: 'bridge'
       },
       Env: [
         `PROJECT_ID=${projectId}`,
-        `USER_ID=${userId}`
+        `USER_ID=${userId}`,
+        `BACKEND_URL=https://backendlovable006.onrender.com`
       ]
     };
 
@@ -63,7 +69,8 @@ export const createAndStartContainer = async (userId, projectId, framework, file
       network: containerInfo.NetworkSettings
     });
 
-    const containerUrl = `http://${containerInfo.NetworkSettings.IPAddress}:3000`;
+    // Обновляем URL контейнера для работы с Render
+    const containerUrl = `https://docker-jy4o.onrender.com/container/${containerInfo.Id}`;
     console.log('Container URL:', containerUrl);
 
     // Обновляем статус после запуска
