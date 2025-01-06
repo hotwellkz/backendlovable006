@@ -1,82 +1,44 @@
-import Docker from 'dockerode';
-import dotenv from 'dotenv';
+import axios from 'axios';
 
-dotenv.config();
+const DOCKER_HOST = process.env.DOCKER_HOST || 'docker-jy4o.onrender.com';
+const DOCKER_PORT = process.env.DOCKER_PORT || '2375';
 
-const dockerConfig = {
-  host: 'docker-jy4o.onrender.com',
-  port: 443,
-  protocol: 'https',
-  version: 'v1.41',
-  timeout: 180000,
+const dockerClient = axios.create({
+  baseURL: `http://${DOCKER_HOST}:${DOCKER_PORT}`,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'User-Agent': 'Lovable-Docker-Client'
-  }
-};
-
-console.log('Инициализация Docker клиента с конфигурацией:', {
-  host: dockerConfig.host,
-  port: dockerConfig.port,
-  protocol: dockerConfig.protocol,
-  version: dockerConfig.version
+  },
+  timeout: 30000,
 });
 
-const docker = new Docker({
-  ...dockerConfig,
-  agent: false, // Отключаем http agent для тестирования без SSL
-  Promise: Promise
+// Добавляем интерцептор для логирования
+dockerClient.interceptors.request.use(request => {
+  console.log('Docker API Request:', {
+    method: request.method,
+    url: request.url,
+    headers: request.headers,
+    data: request.data,
+  });
+  return request;
 });
 
-const initializeDocker = async () => {
-  try {
-    console.log('Попытка подключения к Docker демону...');
-    
-    // Пробуем получить список контейнеров для проверки подключения
-    const containers = await docker.listContainers({
-      all: true,
-      size: false,
-      limit: 1
+dockerClient.interceptors.response.use(
+  response => {
+    console.log('Docker API Response:', {
+      status: response.status,
+      data: response.data,
     });
-    
-    console.log('Успешное подключение к Docker демону');
-    console.log('Активные контейнеры:', containers.length);
-
-    // Получаем информацию о Docker демоне
-    const info = await docker.info();
-    console.log('Информация о Docker демоне:', {
-      containers: info.Containers,
-      images: info.Images,
-      serverVersion: info.ServerVersion,
-      operatingSystem: info.OperatingSystem
+    return response;
+  },
+  error => {
+    console.error('Docker API Error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
     });
-
-    return true;
-  } catch (error) {
-    console.error('Ошибка подключения к Docker демону:', error);
-    console.error('Детали подключения:', {
-      host: dockerConfig.host,
-      port: dockerConfig.port,
-      error: error.message,
-      stack: error.stack,
-      statusCode: error.statusCode,
-      reason: error.reason || 'Неизвестная причина',
-      response: error.response?.data
-    });
-    
-    // Пробуем получить версию Docker для дополнительной диагностики
-    try {
-      const version = await docker.version();
-      console.log('Версия Docker:', version);
-    } catch (versionError) {
-      console.error('Не удалось получить версию Docker:', versionError.message);
-    }
-    
-    return false;
+    throw error;
   }
-};
+);
 
-initializeDocker();
-
-export { docker };
+export { dockerClient };
