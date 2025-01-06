@@ -11,13 +11,15 @@ const dockerConfig = {
   timeout: 120000,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
+  followAllRedirects: true // Добавляем поддержку редиректов
 };
 
 console.log('Initializing Docker client with config:', {
   host: dockerConfig.host,
   port: dockerConfig.port,
-  protocol: dockerConfig.protocol
+  protocol: dockerConfig.protocol,
+  version: dockerConfig.version
 });
 
 const docker = new Docker(dockerConfig);
@@ -27,15 +29,24 @@ const initializeDocker = async () => {
   try {
     console.log('Attempting to connect to Docker daemon...');
     
-    // Проверяем базовое соединение через info вместо version
-    const info = await docker.info();
-    console.log('Successfully connected to Docker daemon');
-    console.log('Docker info:', {
-      containers: info.Containers,
-      images: info.Images,
-      serverVersion: info.ServerVersion,
-      operatingSystem: info.OperatingSystem
-    });
+    // Проверяем базовое соединение через ping вместо info
+    const ping = await docker.ping();
+    console.log('Docker ping response:', ping);
+    
+    if (ping._status === 'OK') {
+      console.log('Successfully connected to Docker daemon');
+      
+      // Теперь пробуем получить информацию
+      const info = await docker.info();
+      console.log('Docker info:', {
+        containers: info.Containers,
+        images: info.Images,
+        serverVersion: info.ServerVersion,
+        operatingSystem: info.OperatingSystem
+      });
+    } else {
+      throw new Error('Docker ping failed');
+    }
 
     return true;
   } catch (error) {
@@ -43,7 +54,10 @@ const initializeDocker = async () => {
     console.error('Connection details:', {
       host: dockerConfig.host,
       port: dockerConfig.port,
-      error: error.message
+      protocol: dockerConfig.protocol,
+      version: dockerConfig.version,
+      error: error.message,
+      stack: error.stack
     });
     
     // Не прерываем работу приложения, просто логируем ошибку
