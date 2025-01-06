@@ -1,118 +1,57 @@
-const handleContainerError = (error, containerId) => {
-  console.error(`Ошибка контейнера (${containerId}):`, error);
-  
-  // Расширенная классификация ошибок
-  if (error.code === 'ECONNREFUSED') {
+export const handleContainerError = (error, containerId) => {
+  console.error(`Container error for ${containerId}:`, error);
+
+  const baseError = {
+    containerId,
+    timestamp: new Date().toISOString(),
+  };
+
+  if (error.response) {
+    // Ошибка от Docker API
     return {
-      type: 'connection',
-      message: 'Не удалось подключиться к Docker daemon',
+      ...baseError,
+      type: 'docker_api_error',
+      message: error.response.data?.message || error.message,
+      status: error.response.status,
+      details: error.response.data,
+      severity: error.response.status >= 500 ? 'critical' : 'error'
+    };
+  }
+
+  if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
+    return {
+      ...baseError,
+      type: 'connection_error',
+      message: 'Не удалось подключиться к Docker демону',
       details: error.message,
       severity: 'critical'
     };
   }
-  
-  if (error.statusCode === 404) {
-    return {
-      type: 'not_found',
-      message: 'Контейнер не найден',
-      details: error.message,
-      severity: 'warning'
-    };
-  }
-  
-  if (error.statusCode === 409) {
-    return {
-      type: 'conflict',
-      message: 'Конфликт при работе с контейнером',
-      details: error.message,
-      severity: 'error'
-    };
-  }
 
-  if (error.code === 'ENOSPC') {
-    return {
-      type: 'resources',
-      message: 'Недостаточно ресурсов для создания контейнера',
-      details: 'Нет свободного места на диске или достигнут лимит контейнеров',
-      severity: 'critical'
-    };
-  }
-
-  if (error.code === 'ETIMEDOUT') {
-    return {
-      type: 'timeout',
-      message: 'Превышено время ожидания операции',
-      details: 'Операция с контейнером заняла слишком много времени',
-      severity: 'error'
-    };
-  }
-  
   return {
-    type: 'unknown',
-    message: 'Произошла неизвестная ошибка',
-    details: error.message,
+    ...baseError,
+    type: 'unknown_error',
+    message: error.message || 'Неизвестная ошибка',
+    details: error,
     severity: 'error'
   };
 };
 
-const logContainerError = async (supabase, error, containerId, userId) => {
+export const logContainerError = async (supabase, error, containerId, userId) => {
   try {
-    console.log(`Логирование ошибки для контейнера ${containerId}:`, {
-      type: error.type,
-      severity: error.severity,
-      message: error.message,
-      details: error.details
-    });
-
-    // Обновляем статус контейнера с более детальной информацией
-    const { error: updateError } = await supabase
-      .from('docker_containers')
-      .update({
-        status: 'error',
-        container_logs: JSON.stringify({
-          error: error.message,
-          type: error.type,
-          severity: error.severity,
-          details: error.details,
-          timestamp: new Date().toISOString()
-        })
-      })
-      .eq('container_id', containerId)
-      .eq('user_id', userId);
-
-    if (updateError) {
-      console.error('Ошибка обновления статуса контейнера:', updateError);
-    }
-
-    // Добавляем метрику об ошибке с дополнительной информацией
-    const { error: metricsError } = await supabase
+    const { data, error: dbError } = await supabase
       .from('container_metrics')
       .insert({
         container_id: containerId,
-        error_count: 1,
         error_type: error.type,
-        error_severity: error.severity
+        error_severity: error.severity,
+        error_count: 1
       });
 
-    if (metricsError) {
-      console.error('Ошибка обновления метрик:', metricsError);
+    if (dbError) {
+      console.error('Failed to log container error:', dbError);
     }
-
-    // Логируем критические ошибки отдельно для мониторинга
-    if (error.severity === 'critical') {
-      console.error('КРИТИЧЕСКАЯ ОШИБКА:', {
-        containerId,
-        userId,
-        error: {
-          type: error.type,
-          message: error.message,
-          details: error.details
-        }
-      });
-    }
-  } catch (err) {
-    console.error('Ошибка в logContainerError:', err);
+  } catch (e) {
+    console.error('Error while logging container error:', e);
   }
 };
-
-export { handleContainerError, logContainerError };
