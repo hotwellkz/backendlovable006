@@ -4,10 +4,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const dockerConfig = {
-  host: 'http://146.190.214.152',  // Используем ваш Docker сервер
-  port: 2375,
+  host: 'https://docker-jy4o.onrender.com',  // Обновленный URL Docker сервера
+  port: 443, // Используем HTTPS порт
+  protocol: 'https',  // Используем HTTPS протокол
   timeout: 60000, // 60 секунд таймаут
-  protocol: 'http'  // Явно указываем протокол
 };
 
 console.log('Initializing Docker client with config:', {
