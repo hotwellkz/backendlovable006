@@ -1,0 +1,10 @@
+meta:
+  environment: nodejs
+  toolchain:
+    name: npm
+build:
+  skip: false
+run:
+  command: npm
+  args: start
+  containerPort: 3000
