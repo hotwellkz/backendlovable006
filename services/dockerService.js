@@ -1,44 +1,52 @@
-import { createContainer } from './containerCreationService.js';
-import { docker } from '../config/docker.js';
-import { handleContainerError } from './containerMonitoringService.js';
+import { dockerClient } from '../config/docker.js';
 
-export const createAndStartContainer = async (userId, projectId, framework, files) => {
+export const createAndStartContainer = async (userId, deploymentId, framework, files) => {
   try {
-    console.log('Создание контейнера для пользователя:', userId);
-    return await createContainer(userId, projectId, framework, files);
-  } catch (error) {
-    console.error('Ошибка при создании контейнера:', error);
-    await handleContainerError(projectId, error);
-    throw error;
-  }
-};
+    console.log('Creating container for deployment:', deploymentId);
 
-export const stopAndRemoveContainer = async (containerId) => {
-  try {
-    console.log('Остановка и удаление контейнера:', containerId);
-    const container = docker.getContainer(containerId);
-    await container.stop();
-    await container.remove();
-    return true;
+    // Создаем конфигурацию контейнера
+    const containerConfig = {
+      Image: `node:18-alpine`,
+      Cmd: ["/bin/sh", "-c", "npm install && npm start"],
+      WorkingDir: "/app",
+      ExposedPorts: {
+        "3000/tcp": {}
+      },
+      HostConfig: {
+        PortBindings: {
+          "3000/tcp": [{ HostPort: "3000" }]
+        }
+      },
+      Labels: {
+        user_id: userId,
+        deployment_id: deploymentId,
+        framework: framework
+      }
+    };
+
+    // Создаем контейнер
+    const createResponse = await dockerClient.post('/containers/create', containerConfig);
+    const containerId = createResponse.data.Id;
+    
+    console.log('Container created:', containerId);
+
+    // Запускаем контейнер
+    await dockerClient.post(`/containers/${containerId}/start`);
+    console.log('Container started:', containerId);
+
+    return { containerId };
   } catch (error) {
-    console.error('Ошибка при остановке/удалении контейнера:', error);
+    console.error('Error in createAndStartContainer:', error);
     throw error;
   }
 };
 
 export const getContainerLogs = async (containerId) => {
   try {
-    console.log('Получение логов контейнера:', containerId);
-    const container = docker.getContainer(containerId);
-    const logs = await container.logs({
-      stdout: true,
-      stderr: true,
-      tail: 100,
-      follow: false
-    });
-    return logs.toString('utf8');
+    const response = await dockerClient.get(`/containers/${containerId}/logs?stdout=1&stderr=1`);
+    return response.data;
   } catch (error) {
-    console.error('Ошибка при получении логов контейнера:', error);
-    throw error;
+    console.error('Error getting container logs:', error);
+    return 'Не удалось получить логи контейнера';
   }
 };
