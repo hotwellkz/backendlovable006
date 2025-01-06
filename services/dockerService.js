@@ -1,52 +1,40 @@
-import { dockerClient } from '../config/docker.js';
+import { docker } from '../config/docker.js';
+import { createContainer } from './containerCreationService.js';
+import { handleContainerError } from './containerMonitoringService.js';
 
-export const createAndStartContainer = async (userId, deploymentId, framework, files) => {
+export const createAndStartContainer = async (userId, projectId, framework, files) => {
   try {
-    console.log('Creating container for deployment:', deploymentId);
-
-    // Создаем конфигурацию контейнера
-    const containerConfig = {
-      Image: `node:18-alpine`,
-      Cmd: ["/bin/sh", "-c", "npm install && npm start"],
-      WorkingDir: "/app",
-      ExposedPorts: {
-        "3000/tcp": {}
-      },
-      HostConfig: {
-        PortBindings: {
-          "3000/tcp": [{ HostPort: "3000" }]
-        }
-      },
-      Labels: {
-        user_id: userId,
-        deployment_id: deploymentId,
-        framework: framework
-      }
-    };
-
-    // Создаем контейнер
-    const createResponse = await dockerClient.post('/containers/create', containerConfig);
-    const containerId = createResponse.data.Id;
-    
-    console.log('Container created:', containerId);
-
-    // Запускаем контейнер
-    await dockerClient.post(`/containers/${containerId}/start`);
-    console.log('Container started:', containerId);
-
-    return { containerId };
+    return await createContainer(userId, projectId, framework, files);
   } catch (error) {
-    console.error('Error in createAndStartContainer:', error);
+    await handleContainerError(projectId, error);
+    throw error;
+  }
+};
+
+export const stopAndRemoveContainer = async (containerId) => {
+  try {
+    const container = docker.getContainer(containerId);
+    await container.stop();
+    await container.remove();
+    return true;
+  } catch (error) {
+    console.error('Error in stopAndRemoveContainer:', error);
     throw error;
   }
 };
 
 export const getContainerLogs = async (containerId) => {
   try {
-    const response = await dockerClient.get(`/containers/${containerId}/logs?stdout=1&stderr=1`);
-    return response.data;
+    const container = docker.getContainer(containerId);
+    const logs = await container.logs({
+      stdout: true,
+      stderr: true,
+      tail: 100,
+      follow: false
+    });
+    return logs.toString('utf8');
   } catch (error) {
     console.error('Error getting container logs:', error);
-    return 'Не удалось получить логи контейнера';
+    throw error;
   }
 };
