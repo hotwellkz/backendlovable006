@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const dockerConfig = {
-  host: 'docker-jy4o.onrender.com',  // Убираем https:// из host
-  port: 443,
+  host: process.env.DOCKER_HOST || 'docker-jy4o.onrender.com',
+  port: process.env.DOCKER_PORT || 443,
   protocol: 'https',
   version: 'v1.41',
   timeout: 180000,
@@ -14,6 +14,8 @@ const dockerConfig = {
   key: process.env.DOCKER_KEY,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': 'Lovable-Docker-Client'
   }
 };
 
@@ -21,19 +23,33 @@ console.log('Инициализация Docker клиента с конфигу�
   host: dockerConfig.host,
   port: dockerConfig.port,
   protocol: dockerConfig.protocol,
-  version: dockerConfig.version
+  version: dockerConfig.version,
+  hasCert: !!dockerConfig.cert,
+  hasKey: !!dockerConfig.key,
+  hasCA: !!dockerConfig.ca
 });
 
-const docker = new Docker(dockerConfig);
+const docker = new Docker({
+  ...dockerConfig,
+  agent: false, // Отключаем http agent
+  Promise: Promise
+});
 
 const initializeDocker = async () => {
   try {
     console.log('Попытка подключения к Docker демону...');
     
-    const containers = await docker.listContainers();
+    // Пробуем получить список контейнеров для проверки подключения
+    const containers = await docker.listContainers({
+      all: true,
+      size: false,
+      limit: 1
+    });
+    
     console.log('Успешное подключение к Docker демону');
     console.log('Активные контейнеры:', containers.length);
 
+    // Получаем информацию о Docker демоне
     const info = await docker.info();
     console.log('Информация о Docker демоне:', {
       containers: info.Containers,
@@ -51,8 +67,17 @@ const initializeDocker = async () => {
       error: error.message,
       stack: error.stack,
       statusCode: error.statusCode,
-      reason: error.reason || 'Неизвестная причина'
+      reason: error.reason || 'Неизвестная причина',
+      response: error.response?.data
     });
+    
+    // Пробуем получить версию Docker для дополнительной диагностики
+    try {
+      const version = await docker.version();
+      console.log('Версия Docker:', version);
+    } catch (versionError) {
+      console.error('Не удалось получить версию Docker:', versionError.message);
+    }
     
     return false;
   }
