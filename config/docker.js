@@ -4,11 +4,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const dockerConfig = {
-  host: process.env.DOCKER_HOST || 'https://backendlovable006.onrender.com',
+  host: process.env.DOCKER_HOST || 'https://docker-jy4o.onrender.com',
   port: process.env.DOCKER_PORT || 443,
   protocol: 'https',
   version: 'v1.41',
-  timeout: 180000, // Увеличиваем таймаут до 3 минут
+  timeout: 180000, // 3 минуты таймаут
   headers: {
     'Content-Type': 'application/json',
   }
@@ -28,9 +28,14 @@ const initializeDocker = async () => {
   try {
     console.log('Attempting to connect to Docker daemon...');
     
-    const info = await docker.info();
+    // Пробуем получить список контейнеров для проверки подключения
+    const containers = await docker.listContainers();
     console.log('Successfully connected to Docker daemon');
-    console.log('Docker info:', {
+    console.log('Active containers:', containers.length);
+
+    // Получаем информацию о Docker демоне
+    const info = await docker.info();
+    console.log('Docker daemon info:', {
       containers: info.Containers,
       images: info.Images,
       serverVersion: info.ServerVersion,
@@ -44,7 +49,9 @@ const initializeDocker = async () => {
       host: dockerConfig.host,
       port: dockerConfig.port,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      statusCode: error.statusCode,
+      reason: error.reason || 'Unknown reason'
     });
     
     // Не прерываем работу приложения, просто логируем ошибку
