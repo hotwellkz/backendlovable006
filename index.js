@@ -29,9 +29,29 @@ app.use('/api', apiRoutes);
 // Статические файлы
 app.use('/uploads', express.static(uploadsDir));
 
+// Корневой маршрут
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    message: 'Lovable Backend API',
+    version: '1.0.0',
+    docs: 'https://docs.lovable.dev'
+  });
+});
+
 // Маршрут для проверки работоспособности
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Обработка 404 ошибок
+app.use((req, res, next) => {
+  console.log(`404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ 
+    error: 'Маршрут не найден',
+    path: req.url,
+    method: req.method
+  });
 });
 
 // Обработка ошибок
