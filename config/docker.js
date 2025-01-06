@@ -4,11 +4,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const dockerConfig = {
-  host: 'https://docker-jy4o.onrender.com',
+  host: 'docker-jy4o.onrender.com',  // Убираем https:// из host
   port: 443,
   protocol: 'https',
   version: 'v1.41',
   timeout: 180000,
+  ca: process.env.DOCKER_CA,
+  cert: process.env.DOCKER_CERT,
+  key: process.env.DOCKER_KEY,
   headers: {
     'Content-Type': 'application/json',
   }
