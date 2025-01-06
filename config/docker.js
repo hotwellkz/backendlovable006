@@ -7,7 +7,7 @@ const dockerConfig = {
   host: 'https://docker-jy4o.onrender.com',
   port: 443,
   protocol: 'https',
-  version: 'v1.41', // Добавляем явное указание версии API
+  version: 'v1.41',
   timeout: 120000,
   headers: {
     'Content-Type': 'application/json',
@@ -27,13 +27,9 @@ const initializeDocker = async () => {
   try {
     console.log('Attempting to connect to Docker daemon...');
     
-    // Проверяем версию API вместо ping
-    const version = await docker.version();
-    console.log('Successfully connected to Docker daemon');
-    console.log('Docker version:', version);
-    
-    // Получаем информацию о Docker
+    // Проверяем базовое соединение через info вместо version
     const info = await docker.info();
+    console.log('Successfully connected to Docker daemon');
     console.log('Docker info:', {
       containers: info.Containers,
       images: info.Images,
