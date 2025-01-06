@@ -1,25 +1,48 @@
 import Docker from 'dockerode';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
+// Создаем директорию для сертификатов если её нет
+const certsDir = path.join(process.cwd(), 'certs');
+if (!fs.existsSync(certsDir)) {
+  fs.mkdirSync(certsDir, { recursive: true });
+}
+
+// Записываем сертификаты из переменных окружения
+const writeCertFile = (filename, content) => {
+  const filepath = path.join(certsDir, filename);
+  fs.writeFileSync(filepath, content, 'utf8');
+  return filepath;
+};
+
+const caPath = writeCertFile('ca.pem', process.env.DOCKER_CA || '');
+const certPath = writeCertFile('cert.pem', process.env.DOCKER_CERT || '');
+const keyPath = writeCertFile('key.pem', process.env.DOCKER_KEY || '');
+
 const dockerConfig = {
   host: 'docker-jy4o.onrender.com',
-  port: 80,
-  protocol: 'http',
+  port: 2376, // Стандартный порт Docker TLS
+  protocol: 'https',
   version: 'v1.41',
   timeout: 120000,
+  ca: fs.readFileSync(caPath),
+  cert: fs.readFileSync(certPath),
+  key: fs.readFileSync(keyPath),
   headers: {
     'Content-Type': 'application/json',
   },
-  followAllRedirects: true // Добавляем поддержку редиректов
+  followAllRedirects: true
 };
 
 console.log('Initializing Docker client with config:', {
   host: dockerConfig.host,
   port: dockerConfig.port,
   protocol: dockerConfig.protocol,
-  version: dockerConfig.version
+  version: dockerConfig.version,
+  certsConfigured: !!(dockerConfig.ca && dockerConfig.cert && dockerConfig.key)
 });
 
 const docker = new Docker(dockerConfig);
