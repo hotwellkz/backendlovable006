@@ -15,7 +15,7 @@ export const validateRequest = (prompt, framework, userId) => {
 };
 
 export const saveChatHistory = async (userId, prompt, isAi = false) => {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('chat_history')
     .insert({
       user_id: userId,
@@ -23,12 +23,16 @@ export const saveChatHistory = async (userId, prompt, isAi = false) => {
       is_ai: isAi,
       timestamp: new Date().toISOString(),
       status: isAi ? 'completed' : 'pending'
-    });
+    })
+    .select()
+    .single();
 
   if (error) {
     console.error('Error saving to chat_history:', error);
     throw error;
   }
+
+  return data;
 };
 
 export const updateChatStatus = async (userId, messageId, status) => {
@@ -46,11 +50,14 @@ export const updateChatStatus = async (userId, messageId, status) => {
 export const handlePromptProcessing = async (prompt, framework, userId) => {
   console.log('Начало обработки промпта:', { framework, userId });
   
+  let chatEntry = null;
+  
   try {
     validateRequest(prompt, framework, userId);
     
-    // Сохраняем промпт пользователя
-    const { data: chatEntry } = await saveChatHistory(userId, prompt);
+    // Сохраняем промпт пользователя и получаем запись
+    chatEntry = await saveChatHistory(userId, prompt);
+    console.log('Промпт сохранен:', chatEntry);
     
     // Обновляем статус на processing
     await updateChatStatus(userId, chatEntry.id, 'processing');
