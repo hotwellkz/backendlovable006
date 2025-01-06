@@ -5,14 +5,48 @@ export const createAndStartContainer = async (userId, projectId, framework, file
   try {
     console.log('Starting container creation for user:', userId);
 
+    // Сохраняем файлы в Supabase Storage
+    console.log('Saving files to Supabase Storage...');
+    const uploadedFiles = [];
+    
+    for (const file of files) {
+      const filePath = `${userId}/${projectId}/${file.path}`;
+      const fileContent = new TextEncoder().encode(file.content);
+      
+      console.log(`Uploading file: ${filePath}`);
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('project_files')
+        .upload(filePath, fileContent, {
+          contentType: 'text/plain',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('Error uploading file:', uploadError);
+        throw uploadError;
+      }
+
+      // Получаем публичную ссылку
+      const { data: { publicUrl } } = await supabase.storage
+        .from('project_files')
+        .getPublicUrl(filePath);
+
+      uploadedFiles.push({
+        path: file.path,
+        url: publicUrl
+      });
+    }
+
+    console.log('Files uploaded successfully:', uploadedFiles);
+
     // Создаем временную директорию для файлов проекта
     const containerName = `app-${projectId.slice(0, 8)}`;
-
-    // Подготавливаем конфигурацию контейнера с правильными настройками для Node.js
+    
+    // Подготавливаем конфигурацию контейнера
     const containerConfig = {
-      Image: 'node:18-alpine', // Используем alpine для меньшего размера
+      Image: 'node:18-alpine',
       name: containerName,
-      Tty: true, // Важно для работы с логами
+      Tty: true,
       OpenStdin: true,
       ExposedPorts: {
         '3000/tcp': {}
@@ -26,9 +60,8 @@ export const createAndStartContainer = async (userId, projectId, framework, file
           MaximumRetryCount: 3
         },
         NetworkMode: 'bridge',
-        // Добавляем больше памяти и CPU
-        Memory: 512 * 1024 * 1024, // 512MB
-        MemorySwap: 1024 * 1024 * 1024, // 1GB
+        Memory: 512 * 1024 * 1024,
+        MemorySwap: 1024 * 1024 * 1024,
         CpuShares: 512
       },
       Env: [
@@ -36,11 +69,25 @@ export const createAndStartContainer = async (userId, projectId, framework, file
         `USER_ID=${userId}`,
         'NODE_ENV=production',
         'PORT=3000',
-        `BACKEND_URL=https://backendlovable006.onrender.com`
+        `BACKEND_URL=https://backendlovable006.onrender.com`,
+        // Передаем список файлов и их URL
+        `PROJECT_FILES=${JSON.stringify(uploadedFiles)}`
       ],
-      // Добавляем рабочую директорию и команду для запуска
       WorkingDir: '/app',
-      Cmd: ["/bin/sh", "-c", "npm install && npm start"]
+      // Обновляем команду запуска для скачивания файлов
+      Cmd: ["/bin/sh", "-c", `
+        apk add --no-cache curl && 
+        mkdir -p /app && 
+        cd /app && 
+        for file in $(echo $PROJECT_FILES | jq -r '.[] | @base64'); do
+          _jq() {
+            echo ${file} | base64 --decode | jq -r ${1}
+          }
+          curl -o "$(_jq '.path')" "$(_jq '.url')"
+        done && 
+        npm install && 
+        npm start
+      `]
     };
 
     // Проверяем подключение к Docker
@@ -52,39 +99,7 @@ export const createAndStartContainer = async (userId, projectId, framework, file
     console.log('Creating container with config:', JSON.stringify(containerConfig, null, 2));
     const container = await docker.createContainer(containerConfig);
     console.log('Container created:', container.id);
-
-    // Подготавливаем файлы для контейнера
-    console.log('Preparing files for container...');
-    const fileContents = files.map(file => ({
-      path: file.path,
-      content: file.content
-    }));
-
-    // Создаем package.json если его нет
-    const hasPackageJson = fileContents.some(f => f.path === 'package.json');
-    if (!hasPackageJson) {
-      fileContents.push({
-        path: 'package.json',
-        content: JSON.stringify({
-          name: containerName,
-          version: '1.0.0',
-          private: true,
-          scripts: {
-            start: 'node index.js'
-          }
-        })
-      });
-    }
-
-    // Записываем файлы в контейнер
-    for (const file of fileContents) {
-      console.log(`Writing file: ${file.path}`);
-      await container.putArchive(
-        Buffer.from(JSON.stringify({ [file.path]: file.content })),
-        { path: '/app' }
-      );
-    }
-
+    
     // Обновляем статус в базе данных
     await supabase
       .from('docker_containers')
@@ -136,7 +151,7 @@ export const createAndStartContainer = async (userId, projectId, framework, file
       code: error.code,
       statusCode: error.statusCode
     });
-
+    
     // Обновляем статус с ошибкой
     await supabase
       .from('docker_containers')
