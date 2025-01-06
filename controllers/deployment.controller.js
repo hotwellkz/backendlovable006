@@ -11,24 +11,57 @@ export const handleDeployment = async (req, res) => {
 
     console.log('Starting deployment process for user:', userId);
 
-    // Создаем новую запись о развертывании
-    const { data: deployment, error: deploymentError } = await supabase
+    // Проверяем существующий проект
+    const { data: existingProject, error: existingError } = await supabase
       .from('deployed_projects')
-      .insert({
-        user_id: userId,
-        framework: framework,
-        status: 'preparing',
-        container_logs: 'Создание нового проекта...'
-      })
-      .select()
+      .select('*')
+      .eq('user_id', userId)
+      .eq('framework', framework)
       .single();
 
-    if (deploymentError) {
-      console.error('Error creating deployment record:', deploymentError);
-      throw deploymentError;
+    let deployment;
+
+    if (existingProject) {
+      console.log('Updating existing project:', existingProject.id);
+      const { data: updatedProject, error: updateError } = await supabase
+        .from('deployed_projects')
+        .update({
+          status: 'preparing',
+          container_logs: 'Обновление существующего проекта...',
+          last_deployment: new Date().toISOString()
+        })
+        .eq('id', existingProject.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Error updating existing project:', updateError);
+        throw updateError;
+      }
+
+      deployment = updatedProject;
+    } else {
+      console.log('Creating new project for framework:', framework);
+      const { data: newProject, error: createError } = await supabase
+        .from('deployed_projects')
+        .insert({
+          user_id: userId,
+          framework: framework,
+          status: 'preparing',
+          container_logs: 'Создание нового проекта...'
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Error creating new project:', createError);
+        throw createError;
+      }
+
+      deployment = newProject;
     }
 
-    console.log('Created new deployment record:', deployment.id);
+    console.log('Working with deployment:', deployment.id);
 
     // Рассчитываем таймаут на основе размера и сложности проекта
     const BUILD_TIMEOUT = calculateBuildTimeout(files, framework);
