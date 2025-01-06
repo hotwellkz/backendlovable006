@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { corsOptions } from './config/cors.js';
-import apiRoutes from './routes/api.js';
+import apiRouter from './routes/api.js';
 
 dotenv.config();
 
@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, 'uploads');
 
 // Подключаем маршруты API
-app.use('/api', apiRoutes);
+app.use('/api', apiRouter);
 
 // Статические файлы
 app.use('/uploads', express.static(uploadsDir));
