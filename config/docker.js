@@ -4,17 +4,17 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const dockerConfig = {
-  host: process.env.DOCKER_HOST || 'https://docker-jy4o.onrender.com',
-  port: process.env.DOCKER_PORT || 443,
+  host: 'https://docker-jy4o.onrender.com',
+  port: 443,
   protocol: 'https',
   version: 'v1.41',
-  timeout: 180000, // 3 минуты таймаут
+  timeout: 180000,
   headers: {
     'Content-Type': 'application/json',
   }
 };
 
-console.log('Initializing Docker client with config:', {
+console.log('Инициализация Docker клиента с конфигурацией:', {
   host: dockerConfig.host,
   port: dockerConfig.port,
   protocol: dockerConfig.protocol,
@@ -23,19 +23,16 @@ console.log('Initializing Docker client with config:', {
 
 const docker = new Docker(dockerConfig);
 
-// Проверяем подключение с расширенным логированием
 const initializeDocker = async () => {
   try {
-    console.log('Attempting to connect to Docker daemon...');
+    console.log('Попытка подключения к Docker демону...');
     
-    // Пробуем получить список контейнеров для проверки подключения
     const containers = await docker.listContainers();
-    console.log('Successfully connected to Docker daemon');
-    console.log('Active containers:', containers.length);
+    console.log('Успешное подключение к Docker демону');
+    console.log('Активные контейнеры:', containers.length);
 
-    // Получаем информацию о Docker демоне
     const info = await docker.info();
-    console.log('Docker daemon info:', {
+    console.log('Информация о Docker демоне:', {
       containers: info.Containers,
       images: info.Images,
       serverVersion: info.ServerVersion,
@@ -44,22 +41,20 @@ const initializeDocker = async () => {
 
     return true;
   } catch (error) {
-    console.error('Failed to connect to Docker daemon:', error);
-    console.error('Connection details:', {
+    console.error('Ошибка подключения к Docker демону:', error);
+    console.error('Детали подключения:', {
       host: dockerConfig.host,
       port: dockerConfig.port,
       error: error.message,
       stack: error.stack,
       statusCode: error.statusCode,
-      reason: error.reason || 'Unknown reason'
+      reason: error.reason || 'Неизвестная причина'
     });
     
-    // Не прерываем работу приложения, просто логируем ошибку
     return false;
   }
 };
 
-// Инициализируем подключение
 initializeDocker();
 
 export { docker };
