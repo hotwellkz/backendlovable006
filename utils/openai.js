@@ -1,26 +1,11 @@
 import OpenAI from 'openai';
 import { supabase } from '../config/supabase.js';
 
-// Функция для получения API ключа из Supabase с повторными попытками
 const getOpenAIKey = async (retryCount = 3) => {
   for (let i = 0; i < retryCount; i++) {
     try {
       console.log(`Попытка ${i + 1} получения API ключа OpenAI из Supabase...`);
       
-      // Проверяем подключение к Supabase
-      const { error: testError } = await supabase
-        .from('secrets')
-        .select('*')
-        .limit(1);
-      
-      if (testError) {
-        console.error('Ошибка подключения к Supabase:', testError);
-        if (i === retryCount - 1) throw testError;
-        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-        continue;
-      }
-
-      // Получаем API ключ
       const { data, error } = await supabase
         .from('secrets')
         .select('value')
@@ -30,34 +15,24 @@ const getOpenAIKey = async (retryCount = 3) => {
       if (error) {
         console.error(`Попытка ${i + 1}: Ошибка при получении API ключа:`, error);
         if (i === retryCount - 1) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
         continue;
       }
       
       if (!data?.value) {
-        console.error(`Попытка ${i + 1}: API ключ не найден в таблице secrets`);
         throw new Error('API ключ OpenAI не найден в базе данных');
       }
 
       console.log('API ключ OpenAI успешно получен');
       return data.value;
     } catch (error) {
-      console.error(`Попытка ${i + 1}: Критическая ошибка при получении API ключа:`, {
-        error: error.message,
-        stack: error.stack,
-        timestamp: new Date().toISOString()
-      });
-      
-      if (i === retryCount - 1) {
-        throw new Error(`Не удалось получить API ключ OpenAI после ${retryCount} попыток: ${error.message}`);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      console.error(`Попытка ${i + 1}: Ошибка при получении API ключа:`, error);
+      if (i === retryCount - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
     }
   }
 };
 
-// Инициализация OpenAI с ключом из Supabase и повторными попытками
 let openai = null;
 export const initOpenAI = async (retryCount = 3) => {
   try {
@@ -71,41 +46,60 @@ export const initOpenAI = async (retryCount = 3) => {
 
       openai = new OpenAI({ 
         apiKey,
-        timeout: 30000, // 30 секунд таймаут для всех запросов
-        maxRetries: 2 // Максимальное количество повторных попыток
+        timeout: 60000, // Увеличиваем таймаут до 60 секунд
+        maxRetries: 3,  // Увеличиваем количество повторных попыток
+        defaultHeaders: {
+          'Content-Type': 'application/json',
+        },
+        defaultQuery: {
+          'api-version': '2023-05-15',
+        },
       });
       
       console.log('Клиент OpenAI успешно инициализирован');
     }
     return openai;
   } catch (error) {
-    console.error('Ошибка при инициализации клиента OpenAI:', {
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
+    console.error('Ошибка при инициализации клиента OpenAI:', error);
     throw error;
   }
 };
 
-export const processPrompt = async (prompt) => {
-  try {
-    const client = await initOpenAI();
-    
-    console.log('Отправка запроса к OpenAI...');
-    const completion = await client.chat.completions.create({
-      messages: [{ role: "user", content: prompt }],
-      model: "gpt-3.5-turbo",
-    });
+export const processPrompt = async (prompt, maxRetries = 3) => {
+  let lastError = null;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const client = await initOpenAI();
+      
+      console.log(`Попытка ${i + 1} отправки запроса к OpenAI...`);
+      const completion = await client.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: "gpt-3.5-turbo",
+        temperature: 0.7,
+        max_tokens: 2000,
+        timeout: 60000,
+      });
 
-    console.log('Ответ успешно получен от OpenAI');
-    return completion.choices[0].message.content;
-  } catch (error) {
-    console.error('Ошибка при обработке промпта:', {
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
-    throw error;
+      console.log('Ответ успешно получен от OpenAI');
+      return completion.choices[0].message.content;
+    } catch (error) {
+      console.error(`Попытка ${i + 1} завершилась ошибкой:`, {
+        error: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
+      });
+      
+      lastError = error;
+      
+      // Если это не последняя попытка, ждем перед следующей
+      if (i < maxRetries - 1) {
+        const delay = Math.pow(2, i) * 1000; // Экспоненциальная задержка
+        console.log(`Ожидание ${delay}мс перед следующей попыткой...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
+  
+  throw new Error(`Не удалось получить ответ от OpenAI после ${maxRetries} попыток: ${lastError?.message}`);
 };
