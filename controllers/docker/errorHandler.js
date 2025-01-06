@@ -1,5 +1,5 @@
 const handleContainerError = (error, containerId) => {
-  console.error(`Container error (${containerId}):`, error);
+  console.error(`Ошибка контейнера (${containerId}):`, error);
   
   // Расширенная классификация ошибок
   if (error.code === 'ECONNREFUSED') {
@@ -57,7 +57,7 @@ const handleContainerError = (error, containerId) => {
 
 const logContainerError = async (supabase, error, containerId, userId) => {
   try {
-    console.log(`Logging error for container ${containerId}:`, {
+    console.log(`Логирование ошибки для контейнера ${containerId}:`, {
       type: error.type,
       severity: error.severity,
       message: error.message,
@@ -81,7 +81,7 @@ const logContainerError = async (supabase, error, containerId, userId) => {
       .eq('user_id', userId);
 
     if (updateError) {
-      console.error('Error updating container status:', updateError);
+      console.error('Ошибка обновления статуса контейнера:', updateError);
     }
 
     // Добавляем метрику об ошибке с дополнительной информацией
@@ -95,12 +95,12 @@ const logContainerError = async (supabase, error, containerId, userId) => {
       });
 
     if (metricsError) {
-      console.error('Error updating metrics:', metricsError);
+      console.error('Ошибка обновления метрик:', metricsError);
     }
 
     // Логируем критические ошибки отдельно для мониторинга
     if (error.severity === 'critical') {
-      console.error('CRITICAL ERROR:', {
+      console.error('КРИТИЧЕСКАЯ ОШИБКА:', {
         containerId,
         userId,
         error: {
@@ -111,7 +111,7 @@ const logContainerError = async (supabase, error, containerId, userId) => {
       });
     }
   } catch (err) {
-    console.error('Error in logContainerError:', err);
+    console.error('Ошибка в logContainerError:', err);
   }
 };
 
